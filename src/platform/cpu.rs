@@ -35,12 +35,64 @@ enum AddrMode {
 
 #[derive(Debug)]
 enum OpCode {
-    LDA,
-    STA,
+    ORA,
+    AND,
+    EOR,
     ADC,
-    INC,
+    STA,
+    LDA,
+    CMP,
+    SBC,
+
+    PHP,
+    BPL,
+    CLC,
+    JSR,
+    BIT,
+    PLP,
+    BMI,
+    SEC,
+    RTI,
+    PHA,
+    JMP,
+    BVC,
+    CLI,
+    RTS,
+    PLA,
+    BVS,
+    SEI,
+    STY,
+    DEY,
+    BCC,
+    TYA,
     LDY,
+    TAY,
+    BCS,
+    CLV,
+    CPY,
     INY,
+    BNE,
+    CLD,
+    CPX,
+    INX,
+    BEQ,
+    SED,
+
+    ASL,
+    ROL,
+    LSR,
+    ROR,
+    STX,
+    TXA,
+    TXS,
+    LDX,
+    TAX,
+    TSX,
+    DEC,
+    DEX,
+    INC,
+    NOP,
+
     BRK,
 }
 
@@ -147,13 +199,216 @@ impl CPU {
     fn parse_operator(&self) -> (OpCode, AddrMode) {
         let opcode_byte = self.mem.borrow()[self.pc as usize];
         match opcode_byte {
-            0x00 => (OpCode::BRK, AddrMode::Implicit),
-            0xa9 => (OpCode::LDA, AddrMode::Immediate),
-            0x85 => (OpCode::STA, AddrMode::ZeroPage),
+            // ORA
+            0x01 => (OpCode::ORA, AddrMode::IndirectX),
+            0x05 => (OpCode::ORA, AddrMode::ZeroPage),
+            0x09 => (OpCode::ORA, AddrMode::Immediate),
+            0x0D => (OpCode::ORA, AddrMode::Absolute),
+            0x11 => (OpCode::ORA, AddrMode::IndirectY),
+            0x15 => (OpCode::ORA, AddrMode::ZeroPageX),
+            0x19 => (OpCode::ORA, AddrMode::AbsoluteY),
+            0x1D => (OpCode::ORA, AddrMode::AbsoluteX),
+            // AND
+            0x21 => (OpCode::AND, AddrMode::IndirectX),
+            0x25 => (OpCode::AND, AddrMode::ZeroPage),
+            0x29 => (OpCode::AND, AddrMode::Immediate),
+            0x2D => (OpCode::AND, AddrMode::Absolute),
+            0x31 => (OpCode::AND, AddrMode::IndirectY),
+            0x35 => (OpCode::AND, AddrMode::ZeroPageX),
+            0x39 => (OpCode::AND, AddrMode::AbsoluteY),
+            0x3D => (OpCode::AND, AddrMode::AbsoluteX),
+            // EOR
+            0x41 => (OpCode::EOR, AddrMode::IndirectX),
+            0x45 => (OpCode::EOR, AddrMode::ZeroPage),
+            0x49 => (OpCode::EOR, AddrMode::Immediate),
+            0x4D => (OpCode::EOR, AddrMode::Absolute),
+            0x51 => (OpCode::EOR, AddrMode::IndirectY),
+            0x55 => (OpCode::EOR, AddrMode::ZeroPageX),
+            0x59 => (OpCode::EOR, AddrMode::AbsoluteY),
+            0x5D => (OpCode::EOR, AddrMode::AbsoluteX),
+            // ADC
+            0x61 => (OpCode::ADC, AddrMode::IndirectX),
             0x65 => (OpCode::ADC, AddrMode::ZeroPage),
-            0xe6 => (OpCode::INC, AddrMode::ZeroPage),
-            0xa4 => (OpCode::LDY, AddrMode::ZeroPage),
-            0xc8 => (OpCode::INY, AddrMode::Implicit),
+            0x69 => (OpCode::ADC, AddrMode::Immediate),
+            0x6D => (OpCode::ADC, AddrMode::Absolute),
+            0x71 => (OpCode::ADC, AddrMode::IndirectY),
+            0x75 => (OpCode::ADC, AddrMode::ZeroPageX),
+            0x79 => (OpCode::ADC, AddrMode::AbsoluteY),
+            0x7D => (OpCode::ADC, AddrMode::AbsoluteX),
+            // STA
+            0x81 => (OpCode::STA, AddrMode::IndirectX),
+            0x85 => (OpCode::STA, AddrMode::ZeroPage),
+            0x89 => (OpCode::NOP, AddrMode::Implicit),
+            0x8D => (OpCode::STA, AddrMode::Absolute),
+            0x91 => (OpCode::STA, AddrMode::IndirectY),
+            0x95 => (OpCode::STA, AddrMode::ZeroPageX),
+            0x99 => (OpCode::STA, AddrMode::AbsoluteY),
+            0x9D => (OpCode::STA, AddrMode::AbsoluteX),
+            // LDA
+            0xA1 => (OpCode::LDA, AddrMode::IndirectX),
+            0xA5 => (OpCode::LDA, AddrMode::ZeroPage),
+            0xA9 => (OpCode::LDA, AddrMode::Immediate),
+            0xAD => (OpCode::LDA, AddrMode::Absolute),
+            0xB1 => (OpCode::LDA, AddrMode::IndirectY),
+            0xB5 => (OpCode::LDA, AddrMode::ZeroPageX),
+            0xB9 => (OpCode::LDA, AddrMode::AbsoluteY),
+            0xBD => (OpCode::LDA, AddrMode::AbsoluteX),
+            // CMP
+            0xC1 => (OpCode::CMP, AddrMode::IndirectX),
+            0xC5 => (OpCode::CMP, AddrMode::ZeroPage),
+            0xC9 => (OpCode::CMP, AddrMode::Immediate),
+            0xCD => (OpCode::CMP, AddrMode::Absolute),
+            0xD1 => (OpCode::CMP, AddrMode::IndirectY),
+            0xD5 => (OpCode::CMP, AddrMode::ZeroPageX),
+            0xD9 => (OpCode::CMP, AddrMode::AbsoluteY),
+            0xDD => (OpCode::CMP, AddrMode::AbsoluteX),
+            // SBC
+            0xE1 => (OpCode::SBC, AddrMode::IndirectX),
+            0xE5 => (OpCode::SBC, AddrMode::ZeroPage),
+            0xE9 => (OpCode::SBC, AddrMode::Immediate),
+            0xED => (OpCode::SBC, AddrMode::Absolute),
+            0xF1 => (OpCode::SBC, AddrMode::IndirectY),
+            0xF5 => (OpCode::SBC, AddrMode::ZeroPageX),
+            0xF9 => (OpCode::SBC, AddrMode::AbsoluteY),
+            0xFD => (OpCode::SBC, AddrMode::AbsoluteX),
+            // BRK
+            0x00 => (OpCode::BRK, AddrMode::Implicit),
+            // PHP
+            0x08 => (OpCode::PHP, AddrMode::Implicit),
+            // BPL
+            0x10 => (OpCode::BPL, AddrMode::Relative),
+            // CLC
+            0x18 => (OpCode::CLC, AddrMode::Implicit),
+            // JSR
+            0x20 => (OpCode::JSR, AddrMode::Absolute),
+            // BIT
+            0x24 => (OpCode::BIT, AddrMode::ZeroPage),
+            0x2C => (OpCode::BIT, AddrMode::Absolute),
+            // PLP
+            0x28 => (OpCode::PLP, AddrMode::Implicit),
+            // BMI
+            0x30 => (OpCode::BMI, AddrMode::Relative),
+            // SEC
+            0x38 => (OpCode::SEC, AddrMode::Implicit),
+            // RTI
+            0x40 => (OpCode::RTI, AddrMode::Implicit),
+            // PHA
+            0x48 => (OpCode::PHA, AddrMode::Implicit),
+            // JMP
+            0x4C => (OpCode::JMP, AddrMode::Absolute),
+            0x6C => (OpCode::JMP, AddrMode::Indirect),
+            // BVC
+            0x50 => (OpCode::BVC, AddrMode::Relative),
+            // CLI
+            0x58 => (OpCode::CLI, AddrMode::Implicit),
+            // RTS
+            0x60 => (OpCode::RTS, AddrMode::Implicit),
+            // PLA
+            0x68 => (OpCode::PLA, AddrMode::Implicit),
+            // BVS
+            0x70 => (OpCode::BVS, AddrMode::Relative),
+            // SEI
+            0x78 => (OpCode::SEI, AddrMode::Implicit),
+            // STY
+            0x84 => (OpCode::STY, AddrMode::ZeroPage),
+            0x8C => (OpCode::STY, AddrMode::Absolute),
+            0x94 => (OpCode::STY, AddrMode::ZeroPageX),
+            // DEY
+            0x88 => (OpCode::DEY, AddrMode::Implicit),
+            // BCC
+            0x90 => (OpCode::BCC, AddrMode::Relative),
+            // TYA
+            0x98 => (OpCode::TYA, AddrMode::Implicit),
+            // LDY
+            0xA0 => (OpCode::LDY, AddrMode::Immediate),
+            0xA4 => (OpCode::LDY, AddrMode::ZeroPage),
+            0xAC => (OpCode::LDY, AddrMode::Absolute),
+            0xB4 => (OpCode::LDY, AddrMode::ZeroPageX),
+            0xBC => (OpCode::LDY, AddrMode::AbsoluteX),
+            // TAY
+            0xA8 => (OpCode::TAY, AddrMode::Implicit),
+            // BCS
+            0xB0 => (OpCode::BCS, AddrMode::Relative),
+            // CLV
+            0xB8 => (OpCode::CLV, AddrMode::Implicit),
+            // CPY
+            0xC0 => (OpCode::CPY, AddrMode::Immediate),
+            0xC4 => (OpCode::CPY, AddrMode::ZeroPage),
+            0xCC => (OpCode::CPY, AddrMode::Absolute),
+            // INY
+            0xC8 => (OpCode::INY, AddrMode::Implicit),
+            // BNE
+            0xD0 => (OpCode::BNE, AddrMode::Relative),
+            // CLD
+            0xD8 => (OpCode::CLD, AddrMode::Implicit),
+            // CPX
+            0xE0 => (OpCode::CPX, AddrMode::Immediate),
+            0xE4 => (OpCode::CPX, AddrMode::ZeroPage),
+            // INX
+            0xE8 => (OpCode::INX, AddrMode::Implicit),
+            // CPX
+            0xEC => (OpCode::CPX, AddrMode::Absolute),
+            // BEQ
+            0xF0 => (OpCode::BEQ, AddrMode::Relative),
+            // SED
+            0xF8 => (OpCode::SED, AddrMode::Implicit),
+            // ASL
+            0x06 => (OpCode::ASL, AddrMode::ZeroPage),
+            0x0A => (OpCode::ASL, AddrMode::Implicit),
+            0x0E => (OpCode::ASL, AddrMode::Absolute),
+            0x16 => (OpCode::ASL, AddrMode::ZeroPageX),
+            0x1E => (OpCode::ASL, AddrMode::AbsoluteX),
+            // ROL
+            0x26 => (OpCode::ROL, AddrMode::ZeroPage),
+            0x2A => (OpCode::ROL, AddrMode::Implicit),
+            0x2E => (OpCode::ROL, AddrMode::Absolute),
+            0x36 => (OpCode::ROL, AddrMode::ZeroPageX),
+            0x3E => (OpCode::ROL, AddrMode::AbsoluteX),
+            // LSR
+            0x46 => (OpCode::LSR, AddrMode::ZeroPage),
+            0x4A => (OpCode::LSR, AddrMode::Implicit),
+            0x4E => (OpCode::LSR, AddrMode::Absolute),
+            0x56 => (OpCode::LSR, AddrMode::ZeroPageX),
+            0x5E => (OpCode::LSR, AddrMode::AbsoluteX),
+            // ROR
+            0x66 => (OpCode::ROR, AddrMode::ZeroPage),
+            0x6A => (OpCode::ROR, AddrMode::Implicit),
+            0x6E => (OpCode::ROR, AddrMode::Absolute),
+            0x76 => (OpCode::ROR, AddrMode::ZeroPageX),
+            0x7E => (OpCode::ROR, AddrMode::AbsoluteX),
+            // STX
+            0x86 => (OpCode::STX, AddrMode::ZeroPage),
+            // TXA
+            0x8A => (OpCode::TXA, AddrMode::Implicit),
+            // STX
+            0x8E => (OpCode::STX, AddrMode::Absolute),
+            0x96 => (OpCode::STX, AddrMode::ZeroPageY),
+            // TXS
+            0x9A => (OpCode::TXS, AddrMode::Implicit),
+            // LDX
+            0xA2 => (OpCode::LDX, AddrMode::Immediate),
+            0xA6 => (OpCode::LDX, AddrMode::ZeroPage),
+            0xAE => (OpCode::LDX, AddrMode::Absolute),
+            0xB6 => (OpCode::LDX, AddrMode::ZeroPageY),
+            0xBE => (OpCode::LDX, AddrMode::AbsoluteY),
+            // TAX
+            0xAA => (OpCode::TAX, AddrMode::Implicit),
+            // TSX
+            0xBA => (OpCode::TSX, AddrMode::Implicit),
+            // DEC
+            0xC6 => (OpCode::DEC, AddrMode::ZeroPage),
+            0xCE => (OpCode::DEC, AddrMode::Absolute),
+            0xD6 => (OpCode::DEC, AddrMode::ZeroPageX),
+            0xDE => (OpCode::DEC, AddrMode::AbsoluteX),
+            // DEX
+            0xCA => (OpCode::DEX, AddrMode::Implicit),
+            // INC
+            0xE6 => (OpCode::INC, AddrMode::ZeroPage),
+            0xEE => (OpCode::INC, AddrMode::Absolute),
+            0xF6 => (OpCode::INC, AddrMode::ZeroPageX),
+            0xFE => (OpCode::INC, AddrMode::AbsoluteX),
+            // NOP
+            0xEA => (OpCode::NOP, AddrMode::Implicit),
             _ => panic!("Unknown opcode {:#x}", opcode_byte),
         }
     }
