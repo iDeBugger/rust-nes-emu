@@ -139,12 +139,63 @@ impl CPU {
         loop {
             let (opcode, addr_mode) = self.parse_operator();
             match opcode {
-                OpCode::LDA => self.do_lda(&addr_mode),
-                OpCode::STA => self.do_sta(&addr_mode),
+                OpCode::ORA => self.do_ora(&addr_mode),
+                OpCode::AND => self.do_and(&addr_mode),
+                OpCode::EOR => self.do_eor(&addr_mode),
                 OpCode::ADC => self.do_adc(&addr_mode),
-                OpCode::INC => self.do_inc(&addr_mode),
+                OpCode::STA => self.do_sta(&addr_mode),
+                OpCode::LDA => self.do_lda(&addr_mode),
+                OpCode::CMP => self.do_cmp(&addr_mode),
+                OpCode::SBC => self.do_sbc(&addr_mode),
+
+                OpCode::PHP => self.do_php(&addr_mode),
+                OpCode::BPL => self.do_bpl(&addr_mode),
+                OpCode::CLC => self.do_clc(&addr_mode),
+                OpCode::JSR => self.do_jsr(&addr_mode),
+                OpCode::BIT => self.do_bit(&addr_mode),
+                OpCode::PLP => self.do_plp(&addr_mode),
+                OpCode::BMI => self.do_bmi(&addr_mode),
+                OpCode::SEC => self.do_sec(&addr_mode),
+                OpCode::RTI => self.do_rti(&addr_mode),
+                OpCode::PHA => self.do_pha(&addr_mode),
+                OpCode::JMP => self.do_jmp(&addr_mode),
+                OpCode::BVC => self.do_bvc(&addr_mode),
+                OpCode::CLI => self.do_cli(&addr_mode),
+                OpCode::RTS => self.do_rts(&addr_mode),
+                OpCode::PLA => self.do_pla(&addr_mode),
+                OpCode::BVS => self.do_bvs(&addr_mode),
+                OpCode::SEI => self.do_sei(&addr_mode),
+                OpCode::STY => self.do_sty(&addr_mode),
+                OpCode::DEY => self.do_dey(&addr_mode),
+                OpCode::BCC => self.do_bcc(&addr_mode),
+                OpCode::TYA => self.do_tya(&addr_mode),
                 OpCode::LDY => self.do_ldy(&addr_mode),
+                OpCode::TAY => self.do_tay(&addr_mode),
+                OpCode::BCS => self.do_bcs(&addr_mode),
+                OpCode::CLV => self.do_clv(&addr_mode),
+                OpCode::CPY => self.do_cpy(&addr_mode),
                 OpCode::INY => self.do_iny(&addr_mode),
+                OpCode::BNE => self.do_bne(&addr_mode),
+                OpCode::CLD => self.do_cld(&addr_mode),
+                OpCode::CPX => self.do_cpx(&addr_mode),
+                OpCode::INX => self.do_inx(&addr_mode),
+                OpCode::BEQ => self.do_beq(&addr_mode),
+                OpCode::SED => self.do_sed(&addr_mode),
+
+                OpCode::ASL => self.do_asl(&addr_mode),
+                OpCode::ROL => self.do_rol(&addr_mode),
+                OpCode::LSR => self.do_lsr(&addr_mode),
+                OpCode::ROR => self.do_ror(&addr_mode),
+                OpCode::STX => self.do_stx(&addr_mode),
+                OpCode::TXA => self.do_txa(&addr_mode),
+                OpCode::TXS => self.do_txs(&addr_mode),
+                OpCode::LDX => self.do_ldx(&addr_mode),
+                OpCode::TAX => self.do_tax(&addr_mode),
+                OpCode::TSX => self.do_tsx(&addr_mode),
+                OpCode::DEC => self.do_dec(&addr_mode),
+                OpCode::DEX => self.do_dex(&addr_mode),
+                OpCode::INC => self.do_inc(&addr_mode),
+                OpCode::NOP => self.do_nop(&addr_mode),
                 OpCode::BRK => break,
                 _ => unimplemented!("Opcode {:?} is not implemented", opcode),
             }
@@ -437,65 +488,16 @@ impl CPU {
         self.s = self.s | (value & 0b10000000)
     }
 
-    fn do_lda(&mut self, addr_mode: &AddrMode) {
-        let opcode_name = "LDA";
-        match addr_mode {
-            AddrMode::Immediate => {
-                let operand = self.parse_operand(&addr_mode);
-                match operand {
-                    Operand::Value(value) => {
-                        self.a = value;
-                        self.update_flags(value);
-                    }
-                    _ => unreachable!(
-                        "Operand {:?} is not defined for opcode {:?} with {:?} addressing mode",
-                        operand, opcode_name, addr_mode
-                    ),
-                }
-            }
-            AddrMode::Implicit | AddrMode::ZeroPageY | AddrMode::Indirect | AddrMode::Relative => {
-                unreachable!(
-                    "Addressing mode {:?} is not defined for {:?} opcode",
-                    addr_mode, opcode_name
-                )
-            }
-            _ => unimplemented!(
-                "Addressing mode {:?} is not implemented for {:?} opcode",
-                addr_mode,
-                opcode_name
-            ),
-        }
+    fn do_ora(&mut self, addr_mode: &AddrMode) {
+        todo!()
     }
 
-    fn do_sta(&mut self, addr_mode: &AddrMode) {
-        let opcode_name = "STA";
-        match addr_mode {
-            AddrMode::ZeroPage => {
-                let operand = self.parse_operand(addr_mode);
-                match operand {
-                    Operand::Memory(address) => {
-                        self.mem.borrow_mut()[address as usize] = self.a;
-                    }
-                    _ => unreachable!(
-                        "Operand {:?} is not defined for opcode {:?} with {:?} addressing mode",
-                        operand, opcode_name, addr_mode
-                    ),
-                }
-            }
-            AddrMode::Implicit
-            | AddrMode::Immediate
-            | AddrMode::Relative
-            | AddrMode::Indirect
-            | AddrMode::ZeroPageY => unreachable!(
-                "Addressing mode {:?} is not defined for {:?} opcode",
-                addr_mode, opcode_name
-            ),
-            _ => unimplemented!(
-                "Addressing mode {:?} is not implemented for {:?} opcode",
-                addr_mode,
-                opcode_name
-            ),
-        }
+    fn do_and(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_eor(&mut self, addr_mode: &AddrMode) {
+        todo!()
     }
 
     fn do_adc(&mut self, addr_mode: &AddrMode) {
@@ -547,20 +549,14 @@ impl CPU {
         }
     }
 
-    fn do_inc(&mut self, addr_mode: &AddrMode) {
-        let opcode_name = "INC";
+    fn do_sta(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "STA";
         match addr_mode {
             AddrMode::ZeroPage => {
                 let operand = self.parse_operand(addr_mode);
                 match operand {
                     Operand::Memory(address) => {
-                        {
-                            let mut mem = self.mem.borrow_mut();
-                            mem[address as usize] += 1;
-                        }
-
-                        let new_value = self.mem.borrow()[address as usize];
-                        self.update_flags(new_value)
+                        self.mem.borrow_mut()[address as usize] = self.a;
                     }
                     _ => unreachable!(
                         "Operand {:?} is not defined for opcode {:?} with {:?} addressing mode",
@@ -571,10 +567,7 @@ impl CPU {
             AddrMode::Implicit
             | AddrMode::Immediate
             | AddrMode::Relative
-            | AddrMode::AbsoluteY
             | AddrMode::Indirect
-            | AddrMode::IndirectX
-            | AddrMode::IndirectY
             | AddrMode::ZeroPageY => unreachable!(
                 "Addressing mode {:?} is not defined for {:?} opcode",
                 addr_mode, opcode_name
@@ -585,6 +578,128 @@ impl CPU {
                 opcode_name
             ),
         }
+    }
+
+    fn do_lda(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "LDA";
+        match addr_mode {
+            AddrMode::Immediate => {
+                let operand = self.parse_operand(&addr_mode);
+                match operand {
+                    Operand::Value(value) => {
+                        self.a = value;
+                        self.update_flags(value);
+                    }
+                    _ => unreachable!(
+                        "Operand {:?} is not defined for opcode {:?} with {:?} addressing mode",
+                        operand, opcode_name, addr_mode
+                    ),
+                }
+            }
+            AddrMode::Implicit | AddrMode::ZeroPageY | AddrMode::Indirect | AddrMode::Relative => {
+                unreachable!(
+                    "Addressing mode {:?} is not defined for {:?} opcode",
+                    addr_mode, opcode_name
+                )
+            }
+            _ => unimplemented!(
+                "Addressing mode {:?} is not implemented for {:?} opcode",
+                addr_mode,
+                opcode_name
+            ),
+        }
+    }
+
+    fn do_cmp(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_sbc(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_php(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_bpl(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_clc(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_jsr(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_bit(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_plp(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_bmi(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_sec(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_rti(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_pha(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_jmp(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_bvc(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_cli(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_rts(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_pla(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_bvs(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_sei(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_sty(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_dey(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_bcc(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_tya(&mut self, addr_mode: &AddrMode) {
+        todo!()
     }
 
     fn do_ldy(&mut self, addr_mode: &AddrMode) {
@@ -626,6 +741,22 @@ impl CPU {
         }
     }
 
+    fn do_tay(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_bcs(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_clv(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_cpy(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
     fn do_iny(&mut self, addr_mode: &AddrMode) {
         let opcode_name = "INY";
         match addr_mode {
@@ -640,6 +771,122 @@ impl CPU {
                 )
             }
         }
+    }
+
+    fn do_bne(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_cld(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_cpx(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_inx(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_beq(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_sed(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_asl(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_rol(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_lsr(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_ror(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_stx(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_txa(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_txs(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_ldx(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_tax(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_tsx(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_dec(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_dex(&mut self, addr_mode: &AddrMode) {
+        todo!()
+    }
+
+    fn do_inc(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "INC";
+        match addr_mode {
+            AddrMode::ZeroPage => {
+                let operand = self.parse_operand(addr_mode);
+                match operand {
+                    Operand::Memory(address) => {
+                        {
+                            let mut mem = self.mem.borrow_mut();
+                            mem[address as usize] += 1;
+                        }
+
+                        let new_value = self.mem.borrow()[address as usize];
+                        self.update_flags(new_value)
+                    }
+                    _ => unreachable!(
+                        "Operand {:?} is not defined for opcode {:?} with {:?} addressing mode",
+                        operand, opcode_name, addr_mode
+                    ),
+                }
+            }
+            AddrMode::Implicit
+            | AddrMode::Immediate
+            | AddrMode::Relative
+            | AddrMode::AbsoluteY
+            | AddrMode::Indirect
+            | AddrMode::IndirectX
+            | AddrMode::IndirectY
+            | AddrMode::ZeroPageY => unreachable!(
+                "Addressing mode {:?} is not defined for {:?} opcode",
+                addr_mode, opcode_name
+            ),
+            _ => unimplemented!(
+                "Addressing mode {:?} is not implemented for {:?} opcode",
+                addr_mode,
+                opcode_name
+            ),
+        }
+    }
+
+    fn do_nop(&mut self, addr_mode: &AddrMode) {
+        todo!()
     }
 }
 
