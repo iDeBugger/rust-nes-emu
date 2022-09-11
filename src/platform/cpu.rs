@@ -1,8 +1,4 @@
-use std::{
-    cell::RefCell,
-    ops::{Add, AddAssign},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
 use super::memory::Memory;
 
@@ -19,7 +15,6 @@ enum Register {
 #[derive(Debug)]
 enum AddrMode {
     Implicit,
-    Accumulator,
     Immediate,
     ZeroPage,
     ZeroPageX,
@@ -156,7 +151,6 @@ impl CPU {
 
             self.pc += match addr_mode {
                 AddrMode::Implicit => 1,
-                AddrMode::Accumulator => 1,
                 AddrMode::Immediate => 2,
                 AddrMode::ZeroPage => 2,
                 AddrMode::ZeroPageX => 2,
@@ -416,7 +410,7 @@ impl CPU {
     fn parse_operand(&mut self, addr_mode: &AddrMode) -> Operand {
         let mem = self.mem.borrow();
         match addr_mode {
-            AddrMode::Implicit | AddrMode::Accumulator => {
+            AddrMode::Implicit => {
                 unreachable!(
                     "Parsing operand for {:?} addressing mode makes no sense!",
                     addr_mode
@@ -459,11 +453,7 @@ impl CPU {
                     ),
                 }
             }
-            AddrMode::Implicit
-            | AddrMode::ZeroPageY
-            | AddrMode::Accumulator
-            | AddrMode::Indirect
-            | AddrMode::Relative => {
+            AddrMode::Implicit | AddrMode::ZeroPageY | AddrMode::Indirect | AddrMode::Relative => {
                 unreachable!(
                     "Addressing mode {:?} is not defined for {:?} opcode",
                     addr_mode, opcode_name
@@ -494,7 +484,6 @@ impl CPU {
             }
             AddrMode::Implicit
             | AddrMode::Immediate
-            | AddrMode::Accumulator
             | AddrMode::Relative
             | AddrMode::Indirect
             | AddrMode::ZeroPageY => unreachable!(
@@ -544,14 +533,12 @@ impl CPU {
                     ),
                 }
             }
-            AddrMode::Implicit
-            | AddrMode::Accumulator
-            | AddrMode::Relative
-            | AddrMode::Indirect
-            | AddrMode::ZeroPageY => unreachable!(
-                "Addressing mode {:?} is not defined for {:?} opcode",
-                addr_mode, opcode_name
-            ),
+            AddrMode::Implicit | AddrMode::Relative | AddrMode::Indirect | AddrMode::ZeroPageY => {
+                unreachable!(
+                    "Addressing mode {:?} is not defined for {:?} opcode",
+                    addr_mode, opcode_name
+                )
+            }
             _ => unimplemented!(
                 "Addressing mode {:?} is not implemented for {:?} opcode",
                 addr_mode,
@@ -583,7 +570,6 @@ impl CPU {
             }
             AddrMode::Implicit
             | AddrMode::Immediate
-            | AddrMode::Accumulator
             | AddrMode::Relative
             | AddrMode::AbsoluteY
             | AddrMode::Indirect
@@ -621,7 +607,6 @@ impl CPU {
                 }
             }
             AddrMode::Implicit
-            | AddrMode::Accumulator
             | AddrMode::Relative
             | AddrMode::AbsoluteY
             | AddrMode::Indirect
