@@ -514,6 +514,12 @@ impl CPU {
             }
             AddrMode::Immediate => Operand::Memory(self.pc + 1),
             AddrMode::ZeroPage => Operand::Memory(mem[self.pc as usize + 1] as u16),
+            AddrMode::ZeroPageX => {
+                Operand::Memory((mem[self.pc as usize + 1] as u16 + self.x as u16) % 256)
+            }
+            AddrMode::ZeroPageY => {
+                Operand::Memory((mem[self.pc as usize + 1] as u16 + self.y as u16) % 256)
+            }
             AddrMode::Absolute => Operand::Memory(u16::from_le_bytes([
                 mem[self.pc as usize + 1],
                 mem[self.pc as usize + 2],
@@ -947,6 +953,7 @@ impl CPU {
     fn do_plp(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.p = self.stack_pop();
+            return;
         };
 
         let opcode_name = "PLP";
@@ -995,6 +1002,7 @@ impl CPU {
         if let AddrMode::Implicit = addr_mode {
             self.p = self.stack_pop();
             self.pc = u16::from_le_bytes([self.stack_pop(), self.stack_pop()]);
+            return;
         };
 
         let opcode_name = "RTI";
@@ -1008,6 +1016,7 @@ impl CPU {
     fn do_pha(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.stack_push(self.a);
+            return;
         };
 
         let opcode_name = "PHA";
@@ -1063,7 +1072,8 @@ impl CPU {
 
     fn do_cli(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
-            self.clear_interrupt_disable_flag()
+            self.clear_interrupt_disable_flag();
+            return;
         };
 
         let opcode_name = "CLI";
@@ -1076,7 +1086,8 @@ impl CPU {
 
     fn do_rts(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
-            self.pc = u16::from_le_bytes([self.stack_pop(), self.stack_pop()])
+            self.pc = u16::from_le_bytes([self.stack_pop(), self.stack_pop()]);
+            return;
         };
 
         let opcode_name = "RTS";
@@ -1091,6 +1102,7 @@ impl CPU {
         if let AddrMode::Implicit = addr_mode {
             self.a = self.stack_pop();
             self.update_flags(self.a);
+            return;
         };
 
         let opcode_name = "PLA";
@@ -1124,7 +1136,8 @@ impl CPU {
 
     fn do_sei(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
-            self.set_interrupt_disable_flag()
+            self.set_interrupt_disable_flag();
+            return;
         };
 
         let opcode_name = "SEI";
@@ -1164,6 +1177,7 @@ impl CPU {
         if let AddrMode::Implicit = addr_mode {
             self.y -= 1;
             self.update_flags(self.y);
+            return;
         };
 
         let opcode_name = "DEY";
@@ -1199,6 +1213,7 @@ impl CPU {
         if let AddrMode::Implicit = addr_mode {
             self.a = self.y;
             self.update_flags(self.a);
+            return;
         };
 
         let opcode_name = "TYA";
@@ -1241,6 +1256,7 @@ impl CPU {
         if let AddrMode::Implicit = addr_mode {
             self.y = self.a;
             self.update_flags(self.a);
+            return;
         };
 
         let opcode_name = "TAY";
@@ -1275,6 +1291,7 @@ impl CPU {
     fn do_clv(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.clear_overflow_flag();
+            return;
         };
 
         let opcode_name = "CLV";
@@ -1318,6 +1335,7 @@ impl CPU {
         if let AddrMode::Implicit = addr_mode {
             self.y += 1;
             self.update_flags(self.y);
+            return;
         };
 
         let opcode_name = "INY";
@@ -1352,6 +1370,7 @@ impl CPU {
     fn do_cld(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.clear_decimal_flag();
+            return;
         };
 
         let opcode_name = "CLD";
@@ -1395,6 +1414,7 @@ impl CPU {
         if let AddrMode::Implicit = addr_mode {
             self.x += 1;
             self.update_flags(self.x);
+            return;
         };
 
         let opcode_name = "INX";
@@ -1429,6 +1449,7 @@ impl CPU {
     fn do_sed(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.set_decimal_flag();
+            return;
         };
 
         let opcode_name = "SED";
@@ -1659,6 +1680,7 @@ impl CPU {
     fn do_txa(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.a = self.x;
+            return;
         };
 
         let opcode_name = "TXA";
@@ -1672,6 +1694,7 @@ impl CPU {
     fn do_txs(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.s = self.x;
+            return;
         };
 
         let opcode_name = "TXS";
@@ -1713,6 +1736,7 @@ impl CPU {
     fn do_tax(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.x = self.a;
+            return;
         };
 
         let opcode_name = "TAX";
@@ -1726,6 +1750,7 @@ impl CPU {
     fn do_tsx(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.x = self.s;
+            return;
         };
 
         let opcode_name = "TSX";
@@ -1770,7 +1795,8 @@ impl CPU {
     fn do_dex(&mut self, addr_mode: &AddrMode) {
         if let AddrMode::Implicit = addr_mode {
             self.x -= 1;
-            self.update_flags(self.x)
+            self.update_flags(self.x);
+            return;
         };
 
         let opcode_name = "DEX";
