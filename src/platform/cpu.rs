@@ -524,6 +524,38 @@ impl CPU {
                 mem[self.pc as usize + 1],
                 mem[self.pc as usize + 2],
             ])),
+            AddrMode::AbsoluteX => Operand::Memory(
+                u16::from_le_bytes([mem[self.pc as usize + 1], mem[self.pc as usize + 2]])
+                    + self.x as u16,
+            ),
+            AddrMode::AbsoluteY => Operand::Memory(
+                u16::from_le_bytes([mem[self.pc as usize + 1], mem[self.pc as usize + 2]])
+                    + self.y as u16,
+            ),
+            AddrMode::Indirect => {
+                let address_pointer =
+                    u16::from_le_bytes([mem[self.pc as usize + 1], mem[self.pc as usize + 2]]);
+                Operand::Memory(u16::from_le_bytes([
+                    mem[address_pointer as usize],
+                    mem[address_pointer as usize + 1],
+                ]))
+            }
+            AddrMode::IndirectX => {
+                let arg = mem[self.pc as usize + 1];
+                Operand::Memory(
+                    mem[(arg + self.x) as usize % 256] as u16
+                        + mem[(arg + self.x + 1) as usize % 256] as u16 * 256,
+                )
+            }
+            AddrMode::IndirectY => {
+                let arg = mem[self.pc as usize + 1];
+                Operand::Memory(
+                    mem[(arg) as usize] as u16
+                        + mem[(arg + 1) as usize % 256] as u16 * 256
+                        + self.y as u16,
+                )
+            }
+            AddrMode::Relative => Operand::Offset(mem[self.pc as usize + 1] as i8),
             _ => unimplemented!(
                 "Operand parser for {:?} addressing mode is not implemented",
                 addr_mode
