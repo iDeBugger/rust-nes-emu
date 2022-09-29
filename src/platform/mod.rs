@@ -55,7 +55,17 @@ impl Platform {
         debug!("CPU program counter value from 0xFFFC: {:#06X}", start);
 
         self.cpu.pc = start;
-        self.cpu.run()
+
+        self.run();
+    }
+
+    fn run(&mut self) {
+        let mut cycle: u64 = 0;
+        loop {
+            cycle += 1;
+            trace!("Running cycle {}...", cycle);
+            self.cpu.run_step();
+        }
     }
 }
 

@@ -170,114 +170,117 @@ impl CPU {
             }
         }
 
-        self.run();
-    }
-
-    pub fn run(&mut self) {
-        debug!("Running CPU...");
-
         loop {
-            let (opcode, addr_mode) = self.parse_operator();
-            trace!(
-                "Executing {:?} ({:?}) at {:#X?}",
-                opcode,
-                addr_mode,
-                self.pc
-            );
-            match opcode {
-                OpCode::ORA => self.do_ora(&addr_mode),
-                OpCode::AND => self.do_and(&addr_mode),
-                OpCode::EOR => self.do_eor(&addr_mode),
-                OpCode::ADC => self.do_adc(&addr_mode),
-                OpCode::STA => self.do_sta(&addr_mode),
-                OpCode::LDA => self.do_lda(&addr_mode),
-                OpCode::CMP => self.do_cmp(&addr_mode),
-                OpCode::SBC => self.do_sbc(&addr_mode),
-
-                OpCode::PHP => self.do_php(&addr_mode),
-                OpCode::BPL => self.do_bpl(&addr_mode),
-                OpCode::CLC => self.do_clc(&addr_mode),
-                OpCode::JSR => self.do_jsr(&addr_mode),
-                OpCode::BIT => self.do_bit(&addr_mode),
-                OpCode::PLP => self.do_plp(&addr_mode),
-                OpCode::BMI => self.do_bmi(&addr_mode),
-                OpCode::SEC => self.do_sec(&addr_mode),
-                OpCode::RTI => self.do_rti(&addr_mode),
-                OpCode::PHA => self.do_pha(&addr_mode),
-                OpCode::JMP => self.do_jmp(&addr_mode),
-                OpCode::BVC => self.do_bvc(&addr_mode),
-                OpCode::CLI => self.do_cli(&addr_mode),
-                OpCode::RTS => self.do_rts(&addr_mode),
-                OpCode::PLA => self.do_pla(&addr_mode),
-                OpCode::BVS => self.do_bvs(&addr_mode),
-                OpCode::SEI => self.do_sei(&addr_mode),
-                OpCode::STY => self.do_sty(&addr_mode),
-                OpCode::DEY => self.do_dey(&addr_mode),
-                OpCode::BCC => self.do_bcc(&addr_mode),
-                OpCode::TYA => self.do_tya(&addr_mode),
-                OpCode::LDY => self.do_ldy(&addr_mode),
-                OpCode::TAY => self.do_tay(&addr_mode),
-                OpCode::BCS => self.do_bcs(&addr_mode),
-                OpCode::CLV => self.do_clv(&addr_mode),
-                OpCode::CPY => self.do_cpy(&addr_mode),
-                OpCode::INY => self.do_iny(&addr_mode),
-                OpCode::BNE => self.do_bne(&addr_mode),
-                OpCode::CLD => self.do_cld(&addr_mode),
-                OpCode::CPX => self.do_cpx(&addr_mode),
-                OpCode::INX => self.do_inx(&addr_mode),
-                OpCode::BEQ => self.do_beq(&addr_mode),
-                OpCode::SED => self.do_sed(&addr_mode),
-
-                OpCode::ASL => self.do_asl(&addr_mode),
-                OpCode::ROL => self.do_rol(&addr_mode),
-                OpCode::LSR => self.do_lsr(&addr_mode),
-                OpCode::ROR => self.do_ror(&addr_mode),
-                OpCode::STX => self.do_stx(&addr_mode),
-                OpCode::TXA => self.do_txa(&addr_mode),
-                OpCode::TXS => self.do_txs(&addr_mode),
-                OpCode::LDX => self.do_ldx(&addr_mode),
-                OpCode::TAX => self.do_tax(&addr_mode),
-                OpCode::TSX => self.do_tsx(&addr_mode),
-                OpCode::DEC => self.do_dec(&addr_mode),
-                OpCode::DEX => self.do_dex(&addr_mode),
-                OpCode::INC => self.do_inc(&addr_mode),
-                OpCode::NOP => self.do_nop(&addr_mode),
-                OpCode::BRK => break,
-            }
-
-            if ![
-                OpCode::JMP,
-                OpCode::JSR,
-                OpCode::RTS,
-                OpCode::RTI,
-                OpCode::BPL,
-                OpCode::BMI,
-                OpCode::BVC,
-                OpCode::BVS,
-                OpCode::BCC,
-                OpCode::BCS,
-                OpCode::BNE,
-                OpCode::BEQ,
-            ]
-            .contains(&opcode)
-            {
-                self.pc += match addr_mode {
-                    AddrMode::Implicit => 1,
-                    AddrMode::Immediate => 2,
-                    AddrMode::ZeroPage => 2,
-                    AddrMode::ZeroPageX => 2,
-                    AddrMode::ZeroPageY => 2,
-                    AddrMode::Absolute => 3,
-                    AddrMode::AbsoluteX => 3,
-                    AddrMode::AbsoluteY => 3,
-                    AddrMode::Relative => 2,
-                    AddrMode::Indirect => 3,
-                    AddrMode::IndirectX => 2,
-                    AddrMode::IndirectY => 2,
-                }
+            if self.run_step() {
+                break;
             }
         }
-        println!();
+    }
+
+    pub fn run_step(&mut self) -> bool {
+        debug!("Running CPU step...");
+
+        let (opcode, addr_mode) = self.parse_operator();
+        trace!(
+            "Executing {:?} ({:?}) at {:#X?}",
+            opcode,
+            addr_mode,
+            self.pc
+        );
+        match opcode {
+            OpCode::ORA => self.do_ora(&addr_mode),
+            OpCode::AND => self.do_and(&addr_mode),
+            OpCode::EOR => self.do_eor(&addr_mode),
+            OpCode::ADC => self.do_adc(&addr_mode),
+            OpCode::STA => self.do_sta(&addr_mode),
+            OpCode::LDA => self.do_lda(&addr_mode),
+            OpCode::CMP => self.do_cmp(&addr_mode),
+            OpCode::SBC => self.do_sbc(&addr_mode),
+
+            OpCode::PHP => self.do_php(&addr_mode),
+            OpCode::BPL => self.do_bpl(&addr_mode),
+            OpCode::CLC => self.do_clc(&addr_mode),
+            OpCode::JSR => self.do_jsr(&addr_mode),
+            OpCode::BIT => self.do_bit(&addr_mode),
+            OpCode::PLP => self.do_plp(&addr_mode),
+            OpCode::BMI => self.do_bmi(&addr_mode),
+            OpCode::SEC => self.do_sec(&addr_mode),
+            OpCode::RTI => self.do_rti(&addr_mode),
+            OpCode::PHA => self.do_pha(&addr_mode),
+            OpCode::JMP => self.do_jmp(&addr_mode),
+            OpCode::BVC => self.do_bvc(&addr_mode),
+            OpCode::CLI => self.do_cli(&addr_mode),
+            OpCode::RTS => self.do_rts(&addr_mode),
+            OpCode::PLA => self.do_pla(&addr_mode),
+            OpCode::BVS => self.do_bvs(&addr_mode),
+            OpCode::SEI => self.do_sei(&addr_mode),
+            OpCode::STY => self.do_sty(&addr_mode),
+            OpCode::DEY => self.do_dey(&addr_mode),
+            OpCode::BCC => self.do_bcc(&addr_mode),
+            OpCode::TYA => self.do_tya(&addr_mode),
+            OpCode::LDY => self.do_ldy(&addr_mode),
+            OpCode::TAY => self.do_tay(&addr_mode),
+            OpCode::BCS => self.do_bcs(&addr_mode),
+            OpCode::CLV => self.do_clv(&addr_mode),
+            OpCode::CPY => self.do_cpy(&addr_mode),
+            OpCode::INY => self.do_iny(&addr_mode),
+            OpCode::BNE => self.do_bne(&addr_mode),
+            OpCode::CLD => self.do_cld(&addr_mode),
+            OpCode::CPX => self.do_cpx(&addr_mode),
+            OpCode::INX => self.do_inx(&addr_mode),
+            OpCode::BEQ => self.do_beq(&addr_mode),
+            OpCode::SED => self.do_sed(&addr_mode),
+
+            OpCode::ASL => self.do_asl(&addr_mode),
+            OpCode::ROL => self.do_rol(&addr_mode),
+            OpCode::LSR => self.do_lsr(&addr_mode),
+            OpCode::ROR => self.do_ror(&addr_mode),
+            OpCode::STX => self.do_stx(&addr_mode),
+            OpCode::TXA => self.do_txa(&addr_mode),
+            OpCode::TXS => self.do_txs(&addr_mode),
+            OpCode::LDX => self.do_ldx(&addr_mode),
+            OpCode::TAX => self.do_tax(&addr_mode),
+            OpCode::TSX => self.do_tsx(&addr_mode),
+            OpCode::DEC => self.do_dec(&addr_mode),
+            OpCode::DEX => self.do_dex(&addr_mode),
+            OpCode::INC => self.do_inc(&addr_mode),
+            OpCode::NOP => self.do_nop(&addr_mode),
+            OpCode::BRK => return true,
+        }
+
+        if ![
+            OpCode::JMP,
+            OpCode::JSR,
+            OpCode::RTS,
+            OpCode::RTI,
+            OpCode::BPL,
+            OpCode::BMI,
+            OpCode::BVC,
+            OpCode::BVS,
+            OpCode::BCC,
+            OpCode::BCS,
+            OpCode::BNE,
+            OpCode::BEQ,
+        ]
+        .contains(&opcode)
+        {
+            self.pc += match addr_mode {
+                AddrMode::Implicit => 1,
+                AddrMode::Immediate => 2,
+                AddrMode::ZeroPage => 2,
+                AddrMode::ZeroPageX => 2,
+                AddrMode::ZeroPageY => 2,
+                AddrMode::Absolute => 3,
+                AddrMode::AbsoluteX => 3,
+                AddrMode::AbsoluteY => 3,
+                AddrMode::Relative => 2,
+                AddrMode::Indirect => 3,
+                AddrMode::IndirectX => 2,
+                AddrMode::IndirectY => 2,
+            }
+        }
+
+        return false;
     }
 
     pub fn get_carry_flag(&self) -> bool {
