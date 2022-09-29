@@ -245,7 +245,22 @@ impl CPU {
                 OpCode::BRK => break,
             }
 
-            if ![OpCode::JMP, OpCode::JSR, OpCode::RTS].contains(&opcode) {
+            if ![
+                OpCode::JMP,
+                OpCode::JSR,
+                OpCode::RTS,
+                OpCode::RTI,
+                OpCode::BPL,
+                OpCode::BMI,
+                OpCode::BVC,
+                OpCode::BVS,
+                OpCode::BCC,
+                OpCode::BCS,
+                OpCode::BNE,
+                OpCode::BEQ,
+            ]
+            .contains(&opcode)
+            {
                 self.pc += match addr_mode {
                     AddrMode::Implicit => 1,
                     AddrMode::Immediate => 2,
@@ -1037,6 +1052,7 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        self.pc += 2;
         if !self.get_negative_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
@@ -1182,6 +1198,7 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        self.pc += 2;
         if self.get_negative_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
@@ -1307,6 +1324,7 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        self.pc += 2;
         if !self.get_overflow_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
@@ -1404,6 +1422,7 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        self.pc += 2;
         if self.get_overflow_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
@@ -1470,7 +1489,7 @@ impl CPU {
             trace_flags!(opcode_name, self.p);
             trace_execute!(opcode_name);
 
-            self.y -= 1;
+            self.y = self.y.wrapping_sub(1);
             self.update_flags(self.y);
 
             trace_register!(opcode_name, self.y);
@@ -1507,6 +1526,7 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        self.pc += 2;
         if !self.get_carry_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
@@ -1621,6 +1641,7 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        self.pc += 2;
         if self.get_carry_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
@@ -1730,6 +1751,7 @@ impl CPU {
         trace_register!(opcode_name, self.pc);
         trace_execute!(opcode_name);
 
+        self.pc += 2;
         if !self.get_zero_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
@@ -1841,6 +1863,7 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        self.pc += 2;
         if self.get_zero_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
@@ -2321,7 +2344,7 @@ impl CPU {
             trace_flags!(opcode_name, self.p);
             trace_execute!(opcode_name);
 
-            self.x -= 1;
+            self.x = self.x.wrapping_sub(1);
             self.update_flags(self.x);
 
             trace_register!(opcode_name, self.x);
