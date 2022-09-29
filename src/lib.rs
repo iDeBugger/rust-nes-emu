@@ -1,4 +1,5 @@
 pub mod platform;
+pub mod rom;
 
 #[cfg(test)]
 mod tests {

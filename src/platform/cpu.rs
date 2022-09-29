@@ -1,6 +1,42 @@
+use super::memory::Memory;
+use log::{debug, trace};
 use std::{cell::RefCell, rc::Rc};
 
-use super::memory::Memory;
+macro_rules! trace_operand {
+    ($opcode:tt, $operand:tt) => {
+        trace!("[{}] Operand: {:X?}", $opcode, $operand);
+    };
+}
+
+macro_rules! trace_operand_value {
+    ($opcode:tt, $value:tt) => {
+        trace!("[{}] Operand value: {:#X?} ({})", $opcode, $value, $value);
+    };
+}
+
+macro_rules! trace_register {
+    ($opcode:tt, $register:expr) => {
+        trace!(
+            "[{}] Register {}: {:#X?} ({})",
+            $opcode,
+            stringify!($register).split('.').collect::<Vec<_>>()[1].to_uppercase(),
+            $register,
+            $register
+        );
+    };
+}
+
+macro_rules! trace_flags {
+    ($opcode:tt, $register:expr) => {
+        trace!("[{}] Flags: {:08b}", $opcode, $register);
+    };
+}
+
+macro_rules! trace_execute {
+    ($opcode:tt) => {
+        trace!("[{}] Executing...", $opcode);
+    };
+}
 
 #[derive(Debug)]
 enum Register {
@@ -28,7 +64,7 @@ enum AddrMode {
     IndirectY,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum OpCode {
     ORA,
     AND,
@@ -138,8 +174,16 @@ impl CPU {
     }
 
     pub fn run(&mut self) {
+        debug!("Running CPU...");
+
         loop {
             let (opcode, addr_mode) = self.parse_operator();
+            trace!(
+                "Executing {:?} ({:?}) at {:#X?}",
+                opcode,
+                addr_mode,
+                self.pc
+            );
             match opcode {
                 OpCode::ORA => self.do_ora(&addr_mode),
                 OpCode::AND => self.do_and(&addr_mode),
@@ -201,21 +245,24 @@ impl CPU {
                 OpCode::BRK => break,
             }
 
-            self.pc += match addr_mode {
-                AddrMode::Implicit => 1,
-                AddrMode::Immediate => 2,
-                AddrMode::ZeroPage => 2,
-                AddrMode::ZeroPageX => 2,
-                AddrMode::ZeroPageY => 2,
-                AddrMode::Absolute => 3,
-                AddrMode::AbsoluteX => 3,
-                AddrMode::AbsoluteY => 3,
-                AddrMode::Relative => 2,
-                AddrMode::Indirect => 3,
-                AddrMode::IndirectX => 2,
-                AddrMode::IndirectY => 2,
+            if ![OpCode::JMP, OpCode::JSR, OpCode::RTS].contains(&opcode) {
+                self.pc += match addr_mode {
+                    AddrMode::Implicit => 1,
+                    AddrMode::Immediate => 2,
+                    AddrMode::ZeroPage => 2,
+                    AddrMode::ZeroPageX => 2,
+                    AddrMode::ZeroPageY => 2,
+                    AddrMode::Absolute => 3,
+                    AddrMode::AbsoluteX => 3,
+                    AddrMode::AbsoluteY => 3,
+                    AddrMode::Relative => 2,
+                    AddrMode::Indirect => 3,
+                    AddrMode::IndirectX => 2,
+                    AddrMode::IndirectY => 2,
+                }
             }
         }
+        println!();
     }
 
     pub fn get_carry_flag(&self) -> bool {
@@ -541,17 +588,18 @@ impl CPU {
                 ]))
             }
             AddrMode::IndirectX => {
-                let arg = mem[self.pc as usize + 1];
+                let arg = mem[self.pc as usize + 1] as usize;
+                let x = self.x as usize;
                 Operand::Memory(
-                    mem[(arg + self.x) as usize % 256] as u16
-                        + mem[(arg + self.x + 1) as usize % 256] as u16 * 256,
+                    (mem[(arg + x) % 256] as usize + mem[(arg + x + 1) % 256] as usize * 256)
+                        as u16,
                 )
             }
             AddrMode::IndirectY => {
                 let arg = mem[self.pc as usize + 1];
                 Operand::Memory(
-                    mem[(arg) as usize] as u16
-                        + mem[(arg + 1) as usize % 256] as u16 * 256
+                    mem[arg as usize] as u16
+                        + mem[(arg as usize + 1) % 256] as u16 * 256
                         + self.y as u16,
                 )
             }
@@ -564,19 +612,19 @@ impl CPU {
     }
 
     fn stack_push(&mut self, value: u8) {
-        self.s -= 1;
-
         let mut mem = self.mem.borrow_mut();
         let stack_top = STACK_BASE + self.s as u16;
         mem[stack_top as usize] = value;
+
+        self.s -= 1;
     }
 
     fn stack_pop(&mut self) -> u8 {
+        self.s += 1;
+
         let mem = self.mem.borrow();
         let stack_top = STACK_BASE + self.s as u16;
         let value = mem[stack_top as usize];
-
-        self.s += 1;
 
         return value;
     }
@@ -598,6 +646,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -619,8 +668,16 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         self.a |= value;
         self.update_flags(self.a);
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_and(&mut self, addr_mode: &AddrMode) {
@@ -628,6 +685,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -649,8 +707,16 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         self.a &= value;
         self.update_flags(self.a);
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_eor(&mut self, addr_mode: &AddrMode) {
@@ -658,6 +724,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -679,8 +746,16 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         self.a ^= value;
         self.update_flags(self.a);
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_adc(&mut self, addr_mode: &AddrMode) {
@@ -688,6 +763,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -709,6 +785,11 @@ impl CPU {
                 ),
             }
         };
+
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
 
         let old_a = self.a;
         self.a = self.a.wrapping_add(value);
@@ -730,7 +811,10 @@ impl CPU {
             self.set_overflow_flag();
         }
 
-        self.update_flags(self.a)
+        self.update_flags(self.a);
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_sta(&mut self, addr_mode: &AddrMode) {
@@ -738,6 +822,7 @@ impl CPU {
 
         let address = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
                     AddrMode::ZeroPage
@@ -758,6 +843,10 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, address);
+        trace_execute!(opcode_name);
+        trace_register!(opcode_name, self.a);
+
         let mut mem = self.mem.borrow_mut();
         mem[address as usize] = self.a;
     }
@@ -767,6 +856,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -789,8 +879,16 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+
+        trace_execute!(opcode_name);
         self.a = value;
         self.update_flags(self.a);
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_cmp(&mut self, addr_mode: &AddrMode) {
@@ -798,6 +896,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -819,6 +918,11 @@ impl CPU {
                 ),
             }
         };
+
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
 
         if self.a >= value {
             self.set_carry_flag();
@@ -827,6 +931,8 @@ impl CPU {
         if self.a == value {
             self.set_zero_flag();
         }
+
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_sbc(&mut self, addr_mode: &AddrMode) {
@@ -834,6 +940,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -855,6 +962,11 @@ impl CPU {
                 ),
             }
         };
+
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
 
         let old_a = self.a;
         self.a = self.a.wrapping_sub(value);
@@ -876,15 +988,26 @@ impl CPU {
             self.set_overflow_flag();
         }
 
-        self.update_flags(self.a)
+        self.update_flags(self.a);
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_php(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "PHP";
+
         if let AddrMode::Implicit = addr_mode {
-            return self.stack_push(self.p);
+            trace_register!(opcode_name, self.s);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
+            self.stack_push(self.p);
+
+            trace_register!(opcode_name, self.s);
+            return;
         };
 
-        let opcode_name = "PHP";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -897,6 +1020,7 @@ impl CPU {
 
         let offset = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
                 _ => unimplemented!(
@@ -908,17 +1032,31 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, offset);
+        trace_register!(opcode_name, self.pc);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         if !self.get_negative_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
+
+        trace_register!(opcode_name, self.pc);
     }
 
     fn do_clc(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "CLC";
+
         if let AddrMode::Implicit = addr_mode {
-            return self.clear_carry_flag();
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
+            self.clear_carry_flag();
+
+            trace_flags!(opcode_name, self.p);
+            return;
         };
 
-        let opcode_name = "CLC";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -930,6 +1068,7 @@ impl CPU {
         let opcode_name = "JSR";
         let target = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Absolute, &Operand::Memory(address)) => address,
                 _ => unimplemented!(
@@ -941,16 +1080,25 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, target);
+        trace_register!(opcode_name, self.pc);
+        trace_register!(opcode_name, self.s);
+        trace_execute!(opcode_name);
+
         let [ret_lsb, ret_msb] = (self.pc + 3).to_le_bytes();
         self.stack_push(ret_msb);
         self.stack_push(ret_lsb);
         self.pc = target;
+
+        trace_register!(opcode_name, self.pc);
+        trace_register!(opcode_name, self.s);
     }
 
     fn do_bit(&mut self, addr_mode: &AddrMode) {
         let opcode_name = "BIT";
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (AddrMode::ZeroPage | AddrMode::Absolute, &Operand::Memory(address)) => {
@@ -964,6 +1112,11 @@ impl CPU {
                 ),
             }
         };
+
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
 
         if self.a & value == 0 {
             self.set_zero_flag();
@@ -980,15 +1133,26 @@ impl CPU {
         } else {
             self.clear_negative_flag();
         }
+
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_plp(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "PLP";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.s);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.p = self.stack_pop();
+
+            trace_register!(opcode_name, self.s);
+            trace_flags!(opcode_name, self.p);
+
             return;
         };
 
-        let opcode_name = "PLP";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1001,6 +1165,7 @@ impl CPU {
 
         let offset = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
                 _ => unimplemented!(
@@ -1012,17 +1177,31 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, offset);
+        trace_register!(opcode_name, self.pc);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         if self.get_negative_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
+
+        trace_register!(opcode_name, self.pc);
     }
 
     fn do_sec(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "SEC";
+
         if let AddrMode::Implicit = addr_mode {
-            return self.set_carry_flag();
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
+            self.set_carry_flag();
+
+            trace_flags!(opcode_name, self.p);
+            return;
         };
 
-        let opcode_name = "SEC";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1031,13 +1210,23 @@ impl CPU {
     }
 
     fn do_rti(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "RTI";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.s);
+            trace_register!(opcode_name, self.pc);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.p = self.stack_pop();
             self.pc = u16::from_le_bytes([self.stack_pop(), self.stack_pop()]);
+
+            trace_register!(opcode_name, self.s);
+            trace_register!(opcode_name, self.pc);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "RTI";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1046,12 +1235,20 @@ impl CPU {
     }
 
     fn do_pha(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "PHA";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.a);
+            trace_register!(opcode_name, self.s);
+            trace_execute!(opcode_name);
+
             self.stack_push(self.a);
+
+            trace_register!(opcode_name, self.a);
+            trace_register!(opcode_name, self.s);
             return;
         };
 
-        let opcode_name = "PHA";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1067,6 +1264,7 @@ impl CPU {
         let opcode_name = "JMP";
         let address = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Absolute | AddrMode::Indirect, &Operand::Memory(address)) => address,
                 _ => unimplemented!(
@@ -1078,7 +1276,13 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, address);
+        trace_register!(opcode_name, self.pc);
+        trace_execute!(opcode_name);
+
         self.pc = address;
+
+        trace_register!(opcode_name, self.pc);
     }
 
     fn do_bvc(&mut self, addr_mode: &AddrMode) {
@@ -1086,6 +1290,7 @@ impl CPU {
 
         let offset = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
                 _ => unimplemented!(
@@ -1097,18 +1302,31 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, offset);
+        trace_register!(opcode_name, self.pc);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         if !self.get_overflow_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
+
+        trace_register!(opcode_name, self.pc);
     }
 
     fn do_cli(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "CLI";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.clear_interrupt_disable_flag();
+
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "CLI";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1117,12 +1335,21 @@ impl CPU {
     }
 
     fn do_rts(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "RTS";
+
         if let AddrMode::Implicit = addr_mode {
-            self.pc = u16::from_le_bytes([self.stack_pop(), self.stack_pop()]);
+            trace_register!(opcode_name, self.s);
+            trace_register!(opcode_name, self.pc);
+            trace_execute!(opcode_name);
+
+            let [lsb, msb] = [self.stack_pop(), self.stack_pop()];
+            self.pc = u16::from_le_bytes([lsb, msb]);
+
+            trace_register!(opcode_name, self.s);
+            trace_register!(opcode_name, self.pc);
             return;
         };
 
-        let opcode_name = "RTS";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1131,13 +1358,23 @@ impl CPU {
     }
 
     fn do_pla(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "PLA";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.a);
+            trace_register!(opcode_name, self.s);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.a = self.stack_pop();
             self.update_flags(self.a);
+
+            trace_register!(opcode_name, self.a);
+            trace_register!(opcode_name, self.s);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "PLA";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1150,6 +1387,7 @@ impl CPU {
 
         let offset = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
                 _ => unimplemented!(
@@ -1161,18 +1399,32 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, offset);
+        trace_register!(opcode_name, self.pc);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         if self.get_overflow_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
+
+        trace_register!(opcode_name, self.pc);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_sei(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "SEI";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.set_interrupt_disable_flag();
+
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "SEI";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1184,6 +1436,7 @@ impl CPU {
         let opcode_name = "STY";
         let address = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
                     AddrMode::Immediate
@@ -1201,18 +1454,30 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, address);
+        trace_register!(opcode_name, self.y);
+        trace_execute!(opcode_name);
+
         let mut mem = self.mem.borrow_mut();
         mem[address as usize] = self.y;
     }
 
     fn do_dey(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "DEY";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.y);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.y -= 1;
             self.update_flags(self.y);
+
+            trace_register!(opcode_name, self.y);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "DEY";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1225,6 +1490,7 @@ impl CPU {
 
         let offset = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
                 _ => unimplemented!(
@@ -1236,19 +1502,35 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, offset);
+        trace_register!(opcode_name, self.pc);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         if !self.get_carry_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
+
+        trace_register!(opcode_name, self.pc);
     }
 
     fn do_tya(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "TYA";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.a);
+            trace_register!(opcode_name, self.y);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.a = self.y;
             self.update_flags(self.a);
+
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "TYA";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1261,6 +1543,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -1280,18 +1563,35 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.y);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         self.y = value;
         self.update_flags(self.y);
+
+        trace_register!(opcode_name, self.y);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_tay(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "TAY";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.y);
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.y = self.a;
             self.update_flags(self.a);
+
+            trace_register!(opcode_name, self.y);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "TAY";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1304,6 +1604,7 @@ impl CPU {
 
         let offset = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
                 _ => unimplemented!(
@@ -1315,18 +1616,31 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, offset);
+        trace_register!(opcode_name, self.pc);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         if self.get_carry_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
+
+        trace_register!(opcode_name, self.pc);
     }
 
     fn do_clv(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "CLV";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.clear_overflow_flag();
+
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "CLV";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1339,6 +1653,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -1354,6 +1669,11 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.y);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         if self.y >= value {
             self.set_carry_flag();
         }
@@ -1361,16 +1681,26 @@ impl CPU {
         if self.y == value {
             self.set_zero_flag();
         }
+
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_iny(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "INY";
+
         if let AddrMode::Implicit = addr_mode {
-            self.y += 1;
+            trace_register!(opcode_name, self.y);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
+            self.y = self.y.wrapping_add(1);
             self.update_flags(self.y);
+
+            trace_register!(opcode_name, self.y);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "INY";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1383,6 +1713,7 @@ impl CPU {
 
         let offset = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
                 _ => unimplemented!(
@@ -1394,18 +1725,32 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, offset);
+        trace_flags!(opcode_name, self.p);
+        trace_register!(opcode_name, self.pc);
+        trace_execute!(opcode_name);
+
         if !self.get_zero_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
+
+        trace_flags!(opcode_name, self.p);
+        trace_register!(opcode_name, self.pc);
     }
 
     fn do_cld(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "CLD";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.clear_decimal_flag();
+
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "CLD";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1418,6 +1763,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -1433,6 +1779,11 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.x);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         if self.x >= value {
             self.set_carry_flag();
         }
@@ -1440,16 +1791,27 @@ impl CPU {
         if self.x == value {
             self.set_zero_flag();
         }
+
+        trace_register!(opcode_name, self.x);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_inx(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "INX";
+
         if let AddrMode::Implicit = addr_mode {
-            self.x += 1;
+            trace_register!(opcode_name, self.x);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
+            self.x = self.x.wrapping_add(1);
             self.update_flags(self.x);
+
+            trace_register!(opcode_name, self.x);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "INX";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1462,6 +1824,7 @@ impl CPU {
 
         let offset = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
                 _ => unimplemented!(
@@ -1473,18 +1836,31 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, offset);
+        trace_register!(opcode_name, self.pc);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         if self.get_zero_flag() {
             self.pc = (self.pc as i32 + offset as i32) as u16;
         }
+
+        trace_register!(opcode_name, self.pc);
     }
 
     fn do_sed(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "SED";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.set_decimal_flag();
+
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "SED";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1496,6 +1872,10 @@ impl CPU {
         let opcode_name = "ASL";
 
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             if self.a & 0b10000000 > 1 {
                 self.set_carry_flag();
             }
@@ -1503,11 +1883,15 @@ impl CPU {
             if self.a & 0b10000000 > 1 {
                 self.set_negative_flag();
             }
+
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
         let address = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
                     AddrMode::Immediate
@@ -1525,6 +1909,11 @@ impl CPU {
                 ),
             }
         };
+
+        trace_operand_value!(opcode_name, address);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
 
         let mut value = self.mem.borrow_mut()[address as usize];
         if value & 0b10000000 > 1 {
@@ -1534,12 +1923,19 @@ impl CPU {
         if value & 0b10000000 > 1 {
             self.set_negative_flag();
         }
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_rol(&mut self, addr_mode: &AddrMode) {
         let opcode_name = "ROL";
 
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             let old_carry = self.get_carry_flag();
             if self.a & 0b10000000 > 1 {
                 self.set_carry_flag();
@@ -1548,11 +1944,15 @@ impl CPU {
             if old_carry {
                 self.a |= 0b1;
             }
+
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
         let address = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
                     AddrMode::Immediate
@@ -1570,6 +1970,11 @@ impl CPU {
                 ),
             }
         };
+
+        trace_operand_value!(opcode_name, address);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
 
         let old_carry = self.get_carry_flag();
         let mut set_carry = false;
@@ -1587,21 +1992,32 @@ impl CPU {
         if set_carry {
             self.set_carry_flag()
         }
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_lsr(&mut self, addr_mode: &AddrMode) {
         let opcode_name = "LSR";
 
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             if self.a & 0b00000001 >= 1 {
                 self.set_carry_flag();
             }
             self.a >>= 1;
+
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
         let address = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
                     AddrMode::Immediate
@@ -1619,6 +2035,11 @@ impl CPU {
                 ),
             }
         };
+
+        trace_operand_value!(opcode_name, address);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
 
         let mut set_carry = false;
         {
@@ -1631,12 +2052,19 @@ impl CPU {
         if set_carry {
             self.set_carry_flag()
         }
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_ror(&mut self, addr_mode: &AddrMode) {
         let opcode_name = "ROR";
 
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             let old_carry = self.get_carry_flag();
             if self.a & 0b00000001 >= 1 {
                 self.set_carry_flag();
@@ -1645,11 +2073,15 @@ impl CPU {
             if old_carry {
                 self.a |= 0b1000000;
             }
+
+            trace_register!(opcode_name, self.a);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
         let address = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
                     AddrMode::Immediate
@@ -1667,6 +2099,11 @@ impl CPU {
                 ),
             }
         };
+
+        trace_operand_value!(opcode_name, address);
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
 
         let old_carry = self.get_carry_flag();
         let mut set_carry = false;
@@ -1684,6 +2121,9 @@ impl CPU {
         if set_carry {
             self.set_carry_flag()
         }
+
+        trace_register!(opcode_name, self.a);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_stx(&mut self, addr_mode: &AddrMode) {
@@ -1691,6 +2131,7 @@ impl CPU {
 
         let address = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
                     AddrMode::ZeroPage | AddrMode::ZeroPageY | AddrMode::Absolute,
@@ -1705,17 +2146,28 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, address);
+        trace_register!(opcode_name, self.x);
+        trace_execute!(opcode_name);
+
         let mut mem = self.mem.borrow_mut();
         mem[address as usize] = self.x;
     }
 
     fn do_txa(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "TXA";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.a);
+            trace_register!(opcode_name, self.x);
+            trace_execute!(opcode_name);
+
             self.a = self.x;
+
+            trace_register!(opcode_name, self.a);
             return;
         };
 
-        let opcode_name = "TXA";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1724,12 +2176,19 @@ impl CPU {
     }
 
     fn do_txs(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "TXS";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.s);
+            trace_register!(opcode_name, self.x);
+            trace_execute!(opcode_name);
+
             self.s = self.x;
+
+            trace_register!(opcode_name, self.s);
             return;
         };
 
-        let opcode_name = "TXS";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1742,6 +2201,7 @@ impl CPU {
 
         let value = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (
@@ -1761,17 +2221,32 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, value);
+        trace_register!(opcode_name, self.x);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         self.x = value;
         self.update_flags(self.x);
+
+        trace_register!(opcode_name, self.x);
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_tax(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "TAX";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.x);
+            trace_register!(opcode_name, self.a);
+            trace_execute!(opcode_name);
+
             self.x = self.a;
+
+            trace_register!(opcode_name, self.x);
             return;
         };
 
-        let opcode_name = "TAX";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1780,12 +2255,19 @@ impl CPU {
     }
 
     fn do_tsx(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "TSX";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.x);
+            trace_register!(opcode_name, self.s);
+            trace_execute!(opcode_name);
+
             self.x = self.s;
+
+            trace_register!(opcode_name, self.x);
             return;
         };
 
-        let opcode_name = "TSX";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1798,6 +2280,7 @@ impl CPU {
 
         let address = {
             let operand = self.parse_operand(addr_mode);
+            trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
                     AddrMode::ZeroPage
@@ -1815,6 +2298,10 @@ impl CPU {
             }
         };
 
+        trace_operand_value!(opcode_name, address);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
         let new_value;
         {
             let mut mem = self.mem.borrow_mut();
@@ -1822,16 +2309,26 @@ impl CPU {
             new_value = mem[address as usize];
         }
         self.update_flags(new_value);
+
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_dex(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "DEX";
+
         if let AddrMode::Implicit = addr_mode {
+            trace_register!(opcode_name, self.x);
+            trace_flags!(opcode_name, self.p);
+            trace_execute!(opcode_name);
+
             self.x -= 1;
             self.update_flags(self.x);
+
+            trace_register!(opcode_name, self.x);
+            trace_flags!(opcode_name, self.p);
             return;
         };
 
-        let opcode_name = "DEX";
         unimplemented!(
             "Addressing mode {:?} is not implemented for {:?} opcode",
             addr_mode,
@@ -1841,19 +2338,12 @@ impl CPU {
 
     fn do_inc(&mut self, addr_mode: &AddrMode) {
         let opcode_name = "INC";
-        match addr_mode {
+        let address = match addr_mode {
             AddrMode::ZeroPage => {
                 let operand = self.parse_operand(addr_mode);
+                trace_operand!(opcode_name, operand);
                 match operand {
-                    Operand::Memory(address) => {
-                        {
-                            let mut mem = self.mem.borrow_mut();
-                            mem[address as usize] += 1;
-                        }
-
-                        let new_value = self.mem.borrow()[address as usize];
-                        self.update_flags(new_value)
-                    }
+                    Operand::Memory(address) => address,
                     _ => unreachable!(
                         "Operand {:?} is not defined for opcode {:?} with {:?} addressing mode",
                         operand, opcode_name, addr_mode
@@ -1876,22 +2366,39 @@ impl CPU {
                 addr_mode,
                 opcode_name
             ),
+        };
+
+        trace_operand_value!(opcode_name, address);
+        trace_flags!(opcode_name, self.p);
+        trace_execute!(opcode_name);
+
+        {
+            let mut mem = self.mem.borrow_mut();
+            mem[address as usize] += 1;
         }
+        let new_value = self.mem.borrow()[address as usize];
+        self.update_flags(new_value);
+
+        trace_flags!(opcode_name, self.p);
     }
 
     fn do_nop(&mut self, addr_mode: &AddrMode) {
+        let opcode_name = "NOP";
+        trace_execute!(opcode_name);
         // Literally do nothing
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::rom::INesFormat;
+
     use super::CPU;
     use std::{cell::RefCell, rc::Rc};
 
     #[test]
     fn test_simple_program() {
-        let mem = Rc::new(RefCell::new([0u8; 65535]));
+        let mem = Rc::new(RefCell::new([0u8; 65536]));
         let mut cpu = CPU::new(mem.clone());
 
         cpu.load_and_run(
@@ -1919,7 +2426,7 @@ mod test {
 
     #[test]
     fn test_simple_flags() {
-        let mem = Rc::new(RefCell::new([0u8; 65535]));
+        let mem = Rc::new(RefCell::new([0u8; 65536]));
         let mut cpu = CPU::new(mem.clone());
 
         cpu.load_and_run(
@@ -1941,7 +2448,7 @@ mod test {
 
     #[test]
     fn test_lda_immediate_simple() {
-        let mem = Rc::new(RefCell::new([0u8; 65535]));
+        let mem = Rc::new(RefCell::new([0u8; 65536]));
         let mut cpu = CPU::new(mem.clone());
 
         cpu.load_and_run(

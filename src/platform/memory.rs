@@ -1,1 +1,1 @@
-pub type Memory = [u8; 65535];
+pub type Memory = [u8; 65536];
