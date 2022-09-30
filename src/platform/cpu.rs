@@ -171,14 +171,15 @@ impl CPU {
         }
 
         loop {
-            if self.run_step() {
+            if self.run_step(true) {
                 break;
             }
         }
     }
 
-    pub fn run_step(&mut self) -> bool {
-        debug!("Running CPU step...");
+    pub fn run_step(&mut self, stop_at_loop: bool) -> bool {
+        trace!("Running CPU step...");
+        let old_pc = self.pc;
 
         let (opcode, addr_mode) = self.parse_operator();
         trace!(
@@ -278,6 +279,11 @@ impl CPU {
                 AddrMode::IndirectX => 2,
                 AddrMode::IndirectY => 2,
             }
+        }
+
+        if stop_at_loop && self.pc == old_pc {
+            debug!("We are in a loop, Kowalsky!");
+            return true;
         }
 
         return false;
@@ -563,7 +569,7 @@ impl CPU {
             0xF6 => (OpCode::INC, AddrMode::ZeroPageX),
             0xFE => (OpCode::INC, AddrMode::AbsoluteX),
             // NOP
-            0xEA => (OpCode::NOP, AddrMode::Implicit),
+            0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => (OpCode::NOP, AddrMode::Implicit),
             _ => panic!("Unknown opcode {:#x}", opcode_byte),
         }
     }
@@ -1141,13 +1147,13 @@ impl CPU {
             self.set_zero_flag();
         }
 
-        if value & 0b01000000 == 1 {
+        if value & 0b01000000 >= 1 {
             self.set_overflow_flag();
         } else {
             self.clear_overflow_flag();
         }
 
-        if value & 0b10000000 == 1 {
+        if value & 0b10000000 >= 1 {
             self.set_negative_flag();
         } else {
             self.clear_negative_flag();
