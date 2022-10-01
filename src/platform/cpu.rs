@@ -294,11 +294,11 @@ impl CPU {
     }
 
     fn set_carry_flag(&mut self) {
-        self.p = self.p | 0b00000001
+        self.p |= 0b00000001
     }
 
     fn clear_carry_flag(&mut self) {
-        self.p = self.p & 0b11111110
+        self.p &= 0b11111110
     }
 
     pub fn get_zero_flag(&self) -> bool {
@@ -306,7 +306,11 @@ impl CPU {
     }
 
     fn set_zero_flag(&mut self) {
-        self.p = self.p | 0b00000010
+        self.p |= 0b00000010
+    }
+
+    fn clear_zero_flag(&mut self) {
+        self.p &= 0b11111101;
     }
 
     pub fn get_interrupt_disable_flag(&self) -> bool {
@@ -314,11 +318,11 @@ impl CPU {
     }
 
     fn set_interrupt_disable_flag(&mut self) {
-        self.p = self.p | 0b00000100
+        self.p |= 0b00000100
     }
 
     fn clear_interrupt_disable_flag(&mut self) {
-        self.p = self.p & 0b11111011
+        self.p &= 0b11111011
     }
 
     pub fn get_decimal_flag(&self) -> bool {
@@ -326,11 +330,11 @@ impl CPU {
     }
 
     fn set_decimal_flag(&mut self) {
-        self.p = self.p | 0b00001000
+        self.p |= 0b00001000
     }
 
     fn clear_decimal_flag(&mut self) {
-        self.p = self.p & 0b11110111
+        self.p &= 0b11110111
     }
 
     pub fn get_overflow_flag(&self) -> bool {
@@ -338,11 +342,11 @@ impl CPU {
     }
 
     fn set_overflow_flag(&mut self) {
-        self.p = self.p | 0b01000000
+        self.p |= 0b01000000
     }
 
     fn clear_overflow_flag(&mut self) {
-        self.p = self.p & 0b10111111
+        self.p &= 0b10111111
     }
 
     pub fn get_negative_flag(&self) -> bool {
@@ -350,11 +354,11 @@ impl CPU {
     }
 
     fn set_negative_flag(&mut self) {
-        self.p = self.p | 0b10000000
+        self.p |= 0b10000000
     }
 
     fn clear_negative_flag(&mut self) {
-        self.p = self.p & 0b01111111
+        self.p &= 0b01111111
     }
 
     fn parse_operator(&self) -> (OpCode, AddrMode) {
@@ -656,16 +660,21 @@ impl CPU {
     fn update_flags(&mut self, value: u8) {
         // Zero flag
         if value == 0 {
-            self.p = self.p | 0b10;
+            self.set_zero_flag();
         } else {
-            self.p = self.p & 0b11111101;
+            self.clear_zero_flag();
         }
 
         // Negative flag
-        self.p = self.p | (value & 0b10000000)
+        if value & 0b10000000 > 0 {
+            self.set_negative_flag();
+        } else {
+            self.clear_negative_flag();
+        }
     }
 
     fn do_ora(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "ORA";
 
         let value = {
@@ -705,6 +714,7 @@ impl CPU {
     }
 
     fn do_and(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "AND";
 
         let value = {
@@ -744,6 +754,7 @@ impl CPU {
     }
 
     fn do_eor(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "EOR";
 
         let value = {
@@ -783,6 +794,7 @@ impl CPU {
     }
 
     fn do_adc(&mut self, addr_mode: &AddrMode) {
+        // ???
         let opcode_name = "ADC";
 
         let value = {
@@ -816,23 +828,29 @@ impl CPU {
         trace_execute!(opcode_name);
 
         let old_a = self.a;
+        let mut need_to_set_carry = false;
         self.a = self.a.wrapping_add(value);
-
         if self.a < old_a {
-            self.set_carry_flag();
+            need_to_set_carry = true;
         }
-
         if self.get_carry_flag() {
             let old_a = self.a;
             self.a = self.a.wrapping_add(1);
 
             if self.a < old_a {
-                self.set_carry_flag();
+                need_to_set_carry = true;
             }
+        }
+        if need_to_set_carry {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
         }
 
         if (old_a & 0x80 == value & 0x80) && (old_a & 0x80 != self.a & 0x80) {
             self.set_overflow_flag();
+        } else {
+            self.clear_overflow_flag();
         }
 
         self.update_flags(self.a);
@@ -842,6 +860,7 @@ impl CPU {
     }
 
     fn do_sta(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "STA";
 
         let address = {
@@ -876,6 +895,7 @@ impl CPU {
     }
 
     fn do_lda(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "LDA";
 
         let value = {
@@ -906,8 +926,8 @@ impl CPU {
         trace_operand_value!(opcode_name, value);
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
-
         trace_execute!(opcode_name);
+
         self.a = value;
         self.update_flags(self.a);
 
@@ -916,6 +936,7 @@ impl CPU {
     }
 
     fn do_cmp(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "CMP";
 
         let value = {
@@ -950,16 +971,27 @@ impl CPU {
 
         if self.a >= value {
             self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
         }
 
         if self.a == value {
             self.set_zero_flag();
+        } else {
+            self.clear_zero_flag();
+        }
+
+        if self.a.wrapping_sub(value) & 0b10000000 > 0 {
+            self.set_negative_flag()
+        } else {
+            self.clear_negative_flag()
         }
 
         trace_flags!(opcode_name, self.p);
     }
 
     fn do_sbc(&mut self, addr_mode: &AddrMode) {
+        // ???
         let opcode_name = "SBC";
 
         let value = {
@@ -993,10 +1025,10 @@ impl CPU {
         trace_execute!(opcode_name);
 
         let old_a = self.a;
+        let mut need_to_set_carry = false;
         self.a = self.a.wrapping_sub(value);
-
         if self.a > old_a {
-            self.set_carry_flag();
+            need_to_set_carry = true;
         }
 
         if !self.get_carry_flag() {
@@ -1004,12 +1036,20 @@ impl CPU {
             self.a = self.a.wrapping_sub(1);
 
             if self.a > old_a {
-                self.set_carry_flag();
+                need_to_set_carry = true;
             }
+        }
+
+        if need_to_set_carry {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
         }
 
         if (old_a & 0x80 == value & 0x80) && (old_a & 0x80 != self.a & 0x80) {
             self.set_overflow_flag();
+        } else {
+            self.clear_overflow_flag();
         }
 
         self.update_flags(self.a);
@@ -1019,6 +1059,7 @@ impl CPU {
     }
 
     fn do_php(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "PHP";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1026,7 +1067,7 @@ impl CPU {
             trace_flags!(opcode_name, self.p);
             trace_execute!(opcode_name);
 
-            self.stack_push(self.p);
+            self.stack_push(self.p | 0b00110000);
 
             trace_register!(opcode_name, self.s);
             return;
@@ -1040,6 +1081,7 @@ impl CPU {
     }
 
     fn do_bpl(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "BPL";
 
         let offset = {
@@ -1070,6 +1112,7 @@ impl CPU {
     }
 
     fn do_clc(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "CLC";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1090,6 +1133,7 @@ impl CPU {
     }
 
     fn do_jsr(&mut self, addr_mode: &AddrMode) {
+        // ?
         let opcode_name = "JSR";
         let target = {
             let operand = self.parse_operand(addr_mode);
@@ -1120,6 +1164,7 @@ impl CPU {
     }
 
     fn do_bit(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "BIT";
         let value = {
             let operand = self.parse_operand(addr_mode);
@@ -1145,15 +1190,17 @@ impl CPU {
 
         if self.a & value == 0 {
             self.set_zero_flag();
+        } else {
+            self.clear_zero_flag();
         }
 
-        if value & 0b01000000 >= 1 {
+        if value & 0b01000000 > 0 {
             self.set_overflow_flag();
         } else {
             self.clear_overflow_flag();
         }
 
-        if value & 0b10000000 >= 1 {
+        if value & 0b10000000 > 0 {
             self.set_negative_flag();
         } else {
             self.clear_negative_flag();
@@ -1163,6 +1210,7 @@ impl CPU {
     }
 
     fn do_plp(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "PLP";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1186,6 +1234,7 @@ impl CPU {
     }
 
     fn do_bmi(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "BMI";
 
         let offset = {
@@ -1216,6 +1265,7 @@ impl CPU {
     }
 
     fn do_sec(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "SEC";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1236,6 +1286,7 @@ impl CPU {
     }
 
     fn do_rti(&mut self, addr_mode: &AddrMode) {
+        // ?
         let opcode_name = "RTI";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1261,6 +1312,7 @@ impl CPU {
     }
 
     fn do_pha(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "PHA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1283,6 +1335,7 @@ impl CPU {
     }
 
     fn do_jmp(&mut self, addr_mode: &AddrMode) {
+        // ?
         // An original 6502 has does not correctly fetch the target address
         // if the indirect vector falls on a page boundary (e.g. $xxFF where
         // xx is any value from $00 to $FF). In this case fetches the LSB
@@ -1312,6 +1365,7 @@ impl CPU {
     }
 
     fn do_bvc(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "BVC";
 
         let offset = {
@@ -1342,6 +1396,7 @@ impl CPU {
     }
 
     fn do_cli(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "CLI";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1362,6 +1417,7 @@ impl CPU {
     }
 
     fn do_rts(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "RTS";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1385,6 +1441,7 @@ impl CPU {
     }
 
     fn do_pla(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "PLA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1410,6 +1467,7 @@ impl CPU {
     }
 
     fn do_bvs(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "BVS";
 
         let offset = {
@@ -1441,6 +1499,7 @@ impl CPU {
     }
 
     fn do_sei(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "SEI";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1461,6 +1520,7 @@ impl CPU {
     }
 
     fn do_sty(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "STY";
         let address = {
             let operand = self.parse_operand(addr_mode);
@@ -1491,6 +1551,7 @@ impl CPU {
     }
 
     fn do_dey(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "DEY";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1514,6 +1575,7 @@ impl CPU {
     }
 
     fn do_bcc(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "BCC";
 
         let offset = {
@@ -1544,6 +1606,7 @@ impl CPU {
     }
 
     fn do_tya(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "TYA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1568,6 +1631,7 @@ impl CPU {
     }
 
     fn do_ldy(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "LDY";
 
         let value = {
@@ -1605,6 +1669,7 @@ impl CPU {
     }
 
     fn do_tay(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "TAY";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1614,7 +1679,7 @@ impl CPU {
             trace_execute!(opcode_name);
 
             self.y = self.a;
-            self.update_flags(self.a);
+            self.update_flags(self.y);
 
             trace_register!(opcode_name, self.y);
             trace_flags!(opcode_name, self.p);
@@ -1629,6 +1694,7 @@ impl CPU {
     }
 
     fn do_bcs(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "BCS";
 
         let offset = {
@@ -1659,6 +1725,7 @@ impl CPU {
     }
 
     fn do_clv(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "CLV";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1679,6 +1746,7 @@ impl CPU {
     }
 
     fn do_cpy(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "CPY";
 
         let value = {
@@ -1706,16 +1774,27 @@ impl CPU {
 
         if self.y >= value {
             self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
         }
 
         if self.y == value {
             self.set_zero_flag();
+        } else {
+            self.clear_zero_flag();
+        }
+
+        if (self.y - value) & 0b10000000 > 1 {
+            self.set_negative_flag();
+        } else {
+            self.clear_negative_flag();
         }
 
         trace_flags!(opcode_name, self.p);
     }
 
     fn do_iny(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "INY";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1739,6 +1818,7 @@ impl CPU {
     }
 
     fn do_bne(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "BNE";
 
         let offset = {
@@ -1770,6 +1850,7 @@ impl CPU {
     }
 
     fn do_cld(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "CLD";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1790,6 +1871,7 @@ impl CPU {
     }
 
     fn do_cpx(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "CPX";
 
         let value = {
@@ -1817,10 +1899,20 @@ impl CPU {
 
         if self.x >= value {
             self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
         }
 
         if self.x == value {
             self.set_zero_flag();
+        } else {
+            self.clear_zero_flag();
+        }
+
+        if (self.x - value) & 0b10000000 > 1 {
+            self.set_negative_flag();
+        } else {
+            self.clear_negative_flag();
         }
 
         trace_register!(opcode_name, self.x);
@@ -1828,6 +1920,7 @@ impl CPU {
     }
 
     fn do_inx(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "INX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1851,6 +1944,7 @@ impl CPU {
     }
 
     fn do_beq(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "BEQ";
 
         let offset = {
@@ -1881,6 +1975,7 @@ impl CPU {
     }
 
     fn do_sed(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "SED";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1901,6 +1996,7 @@ impl CPU {
     }
 
     fn do_asl(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "ASL";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1910,11 +2006,13 @@ impl CPU {
 
             if self.a & 0b10000000 > 1 {
                 self.set_carry_flag();
+            } else {
+                self.clear_carry_flag();
             }
+
             self.a <<= 1;
-            if self.a & 0b10000000 > 1 {
-                self.set_negative_flag();
-            }
+
+            self.update_flags(self.a);
 
             trace_register!(opcode_name, self.a);
             trace_flags!(opcode_name, self.p);
@@ -1947,20 +2045,25 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
-        let mut value = self.mem.borrow_mut()[address as usize];
-        if value & 0b10000000 > 1 {
-            self.set_carry_flag();
+        let new_value;
+        {
+            let value = self.mem.borrow_mut()[address as usize];
+            if value & 0b10000000 > 1 {
+                self.set_carry_flag();
+            } else {
+                self.clear_carry_flag();
+            }
+            new_value = value << 1;
+            self.update_flags(value);
         }
-        value <<= 1;
-        if value & 0b10000000 > 1 {
-            self.set_negative_flag();
-        }
+        self.mem.borrow_mut()[address as usize] = new_value;
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
     }
 
     fn do_rol(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "ROL";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1971,11 +2074,14 @@ impl CPU {
             let old_carry = self.get_carry_flag();
             if self.a & 0b10000000 > 1 {
                 self.set_carry_flag();
+            } else {
+                self.clear_carry_flag();
             }
             self.a <<= 1;
             if old_carry {
                 self.a |= 0b1;
             }
+            self.update_flags(self.a);
 
             trace_register!(opcode_name, self.a);
             trace_flags!(opcode_name, self.p);
@@ -2010,26 +2116,31 @@ impl CPU {
 
         let old_carry = self.get_carry_flag();
         let mut set_carry = false;
+        let new_value;
         {
             let value = &mut self.mem.borrow_mut()[address as usize];
             if *value & 0b10000000 > 1 {
                 set_carry = true
             }
             *value <<= 1;
+            new_value = *value;
             if old_carry {
                 *value |= 0b1;
             }
         }
-
         if set_carry {
-            self.set_carry_flag()
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
         }
+        self.update_flags(new_value);
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
     }
 
     fn do_lsr(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "LSR";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2037,10 +2148,13 @@ impl CPU {
             trace_flags!(opcode_name, self.p);
             trace_execute!(opcode_name);
 
-            if self.a & 0b00000001 >= 1 {
+            if self.a & 0b00000001 > 0 {
                 self.set_carry_flag();
+            } else {
+                self.clear_carry_flag();
             }
             self.a >>= 1;
+            self.update_flags(self.a);
 
             trace_register!(opcode_name, self.a);
             trace_flags!(opcode_name, self.p);
@@ -2074,22 +2188,28 @@ impl CPU {
         trace_execute!(opcode_name);
 
         let mut set_carry = false;
+        let new_value;
         {
             let value = &mut self.mem.borrow_mut()[address as usize];
-            if *value & 0b00000001 >= 1 {
+            if *value & 0b00000001 > 0 {
                 set_carry = true
             }
             *value >>= 1;
+            new_value = *value;
         }
         if set_carry {
-            self.set_carry_flag()
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
         }
+        self.update_flags(new_value);
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
     }
 
     fn do_ror(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "ROR";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2098,13 +2218,16 @@ impl CPU {
             trace_execute!(opcode_name);
 
             let old_carry = self.get_carry_flag();
-            if self.a & 0b00000001 >= 1 {
+            if self.a & 0b00000001 > 0 {
                 self.set_carry_flag();
+            } else {
+                self.clear_carry_flag();
             }
             self.a >>= 1;
             if old_carry {
-                self.a |= 0b1000000;
+                self.a |= 0b10000000;
             }
+            self.update_flags(self.a);
 
             trace_register!(opcode_name, self.a);
             trace_flags!(opcode_name, self.p);
@@ -2139,26 +2262,31 @@ impl CPU {
 
         let old_carry = self.get_carry_flag();
         let mut set_carry = false;
+        let new_value;
         {
             let value = &mut self.mem.borrow_mut()[address as usize];
-            if *value & 0b00000001 >= 1 {
+            if *value & 0b00000001 > 0 {
                 set_carry = true
             }
             *value >>= 1;
+            new_value = *value;
             if old_carry {
                 *value |= 0b10000000;
             }
         }
-
         if set_carry {
             self.set_carry_flag()
+        } else {
+            self.clear_carry_flag();
         }
+        self.update_flags(new_value);
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
     }
 
     fn do_stx(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "STX";
 
         let address = {
@@ -2187,6 +2315,7 @@ impl CPU {
     }
 
     fn do_txa(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "TXA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2195,6 +2324,7 @@ impl CPU {
             trace_execute!(opcode_name);
 
             self.a = self.x;
+            self.update_flags(self.a);
 
             trace_register!(opcode_name, self.a);
             return;
@@ -2208,6 +2338,7 @@ impl CPU {
     }
 
     fn do_txs(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "TXS";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2229,6 +2360,7 @@ impl CPU {
     }
 
     fn do_ldx(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "LDX";
 
         let value = {
@@ -2266,6 +2398,7 @@ impl CPU {
     }
 
     fn do_tax(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "TAX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2274,6 +2407,7 @@ impl CPU {
             trace_execute!(opcode_name);
 
             self.x = self.a;
+            self.update_flags(self.x);
 
             trace_register!(opcode_name, self.x);
             return;
@@ -2287,6 +2421,7 @@ impl CPU {
     }
 
     fn do_tsx(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "TSX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2295,6 +2430,7 @@ impl CPU {
             trace_execute!(opcode_name);
 
             self.x = self.s;
+            self.update_flags(self.x);
 
             trace_register!(opcode_name, self.x);
             return;
@@ -2308,6 +2444,7 @@ impl CPU {
     }
 
     fn do_dec(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "DEC";
 
         let address = {
@@ -2337,7 +2474,7 @@ impl CPU {
         let new_value;
         {
             let mut mem = self.mem.borrow_mut();
-            mem[address as usize] -= 1;
+            mem[address as usize] = mem[address as usize].wrapping_sub(1);
             new_value = mem[address as usize];
         }
         self.update_flags(new_value);
@@ -2346,6 +2483,7 @@ impl CPU {
     }
 
     fn do_dex(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "DEX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2369,6 +2507,7 @@ impl CPU {
     }
 
     fn do_inc(&mut self, addr_mode: &AddrMode) {
+        // +
         let opcode_name = "INC";
         let address = match addr_mode {
             AddrMode::ZeroPage => {
@@ -2406,7 +2545,7 @@ impl CPU {
 
         {
             let mut mem = self.mem.borrow_mut();
-            mem[address as usize] += 1;
+            mem[address as usize] = mem[address as usize].wrapping_add(1);
         }
         let new_value = self.mem.borrow()[address as usize];
         self.update_flags(new_value);
