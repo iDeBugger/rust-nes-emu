@@ -2012,7 +2012,7 @@ impl CPU {
                 self.clear_carry_flag();
             }
             new_value = value << 1;
-            self.update_flags(value);
+            self.update_flags(new_value);
         }
         self.mem.borrow_mut()[address as usize] = new_value;
 
@@ -2072,18 +2072,16 @@ impl CPU {
         trace_execute!(opcode_name);
 
         let old_carry = self.get_carry_flag();
-        let mut set_carry = false;
+        let set_carry;
         let new_value;
         {
             let value = &mut self.mem.borrow_mut()[address as usize];
-            if *value & 0b10000000 > 1 {
-                set_carry = true
-            }
+            set_carry = *value & 0b10000000 > 1;
             *value <<= 1;
-            new_value = *value;
             if old_carry {
                 *value |= 0b1;
             }
+            new_value = *value;
         }
         if set_carry {
             self.set_carry_flag();
@@ -2216,18 +2214,16 @@ impl CPU {
         trace_execute!(opcode_name);
 
         let old_carry = self.get_carry_flag();
-        let mut set_carry = false;
+        let mut set_carry;
         let new_value;
         {
             let value = &mut self.mem.borrow_mut()[address as usize];
-            if *value & 0b00000001 > 0 {
-                set_carry = true
-            }
+            set_carry = *value & 0b00000001 > 0;
             *value >>= 1;
-            new_value = *value;
             if old_carry {
                 *value |= 0b10000000;
             }
+            new_value = *value;
         }
         if set_carry {
             self.set_carry_flag()
