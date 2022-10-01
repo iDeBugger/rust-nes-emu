@@ -77,9 +77,24 @@ impl Platform {
 
 #[cfg(test)]
 mod test {
-    use log::{info, LevelFilter};
-
     use super::Platform;
+    use log::{debug, LevelFilter};
+
+    macro_rules! print_rom_result {
+        ($mem:tt) => {
+            let mut vec_str = vec![];
+            let mut n = 0x6004;
+            while $mem[n] != 0 {
+                vec_str.push($mem[n]);
+                n += 1;
+            }
+            let str = vec_str
+                .into_iter()
+                .map(|byte| byte as char)
+                .collect::<String>();
+            debug!("\n{}\n", str);
+        };
+    }
 
     fn init() {
         let _ = pretty_env_logger::formatted_builder()
@@ -96,18 +111,7 @@ mod test {
         platform.load_rom_and_run("./tests/roms/01-implied.nes", true);
 
         let mem = platform.memory.borrow();
-        info!("mem[0x6000]: {:#04X?}", mem[0x6000]);
-
-        let mut vec_str = vec![];
-        let mut n = 0x6004;
-        while mem[n] != 0 {
-            vec_str.push(mem[n]);
-            n += 1;
-        }
-        let str = vec_str
-            .into_iter()
-            .map(|byte| byte as char)
-            .collect::<String>();
-        info!("Result:\n==>\n{}\n==>", str);
+        print_rom_result!(mem);
+        assert_eq!(mem[0x6000], 0x0);
     }
 }
