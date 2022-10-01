@@ -174,4 +174,16 @@ mod test {
         print_rom_result!(mem);
         assert_eq!(mem[0x6000], 0x0);
     }
+
+    #[test]
+    fn test_rom_07_abs_xy() {
+        init();
+
+        let mut platform = Platform::new();
+        platform.load_rom_and_run("./tests/roms/07-abs_xy.nes", true);
+
+        let mem = platform.memory.borrow();
+        print_rom_result!(mem);
+        assert_eq!(mem[0x6000], 0x0);
+    }
 }
