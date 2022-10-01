@@ -645,11 +645,11 @@ impl CPU {
         let stack_top = STACK_BASE + self.s as u16;
         mem[stack_top as usize] = value;
 
-        self.s -= 1;
+        self.s = self.s.wrapping_sub(1);
     }
 
     fn stack_pop(&mut self) -> u8 {
-        self.s += 1;
+        self.s = self.s.wrapping_add(1);
 
         let mem = self.mem.borrow();
         let stack_top = STACK_BASE + self.s as u16;
