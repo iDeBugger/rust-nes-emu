@@ -104,11 +104,35 @@ mod test {
     }
 
     #[test]
-    fn test_rom_implied() {
+    fn test_rom_01_basics() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/01-implied.nes", true);
+        platform.load_rom_and_run("./tests/roms/01-basics.nes", true);
+
+        let mem = platform.memory.borrow();
+        print_rom_result!(mem);
+        assert_eq!(mem[0x6000], 0x0);
+    }
+
+    #[test]
+    fn test_rom_02_implied() {
+        init();
+
+        let mut platform = Platform::new();
+        platform.load_rom_and_run("./tests/roms/02-implied.nes", true);
+
+        let mem = platform.memory.borrow();
+        print_rom_result!(mem);
+        assert_eq!(mem[0x6000], 0x0);
+    }
+
+    #[test]
+    fn test_rom_03_immediate() {
+        init();
+
+        let mut platform = Platform::new();
+        platform.load_rom_and_run("./tests/roms/03-immediate.nes", true);
 
         let mem = platform.memory.borrow();
         print_rom_result!(mem);

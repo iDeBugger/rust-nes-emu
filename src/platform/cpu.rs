@@ -1,5 +1,5 @@
 use super::memory::Memory;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use std::{cell::RefCell, rc::Rc};
 
 macro_rules! trace_operand {
@@ -430,7 +430,7 @@ impl CPU {
             // SBC
             0xE1 => (OpCode::SBC, AddrMode::IndirectX),
             0xE5 => (OpCode::SBC, AddrMode::ZeroPage),
-            0xE9 => (OpCode::SBC, AddrMode::Immediate),
+            0xE9 | 0xEB => (OpCode::SBC, AddrMode::Immediate),
             0xED => (OpCode::SBC, AddrMode::Absolute),
             0xF1 => (OpCode::SBC, AddrMode::IndirectY),
             0xF5 => (OpCode::SBC, AddrMode::ZeroPageX),
@@ -574,6 +574,7 @@ impl CPU {
             0xFE => (OpCode::INC, AddrMode::AbsoluteX),
             // NOP
             0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => (OpCode::NOP, AddrMode::Implicit),
+            0x80 => (OpCode::NOP, AddrMode::Immediate),
             _ => panic!("Unknown opcode {:#x}", opcode_byte),
         }
     }
@@ -674,7 +675,6 @@ impl CPU {
     }
 
     fn do_ora(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "ORA";
 
         let value = {
@@ -714,7 +714,6 @@ impl CPU {
     }
 
     fn do_and(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "AND";
 
         let value = {
@@ -754,7 +753,6 @@ impl CPU {
     }
 
     fn do_eor(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "EOR";
 
         let value = {
@@ -794,7 +792,6 @@ impl CPU {
     }
 
     fn do_adc(&mut self, addr_mode: &AddrMode) {
-        // ???
         let opcode_name = "ADC";
 
         let value = {
@@ -860,7 +857,6 @@ impl CPU {
     }
 
     fn do_sta(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "STA";
 
         let address = {
@@ -895,7 +891,6 @@ impl CPU {
     }
 
     fn do_lda(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "LDA";
 
         let value = {
@@ -936,7 +931,6 @@ impl CPU {
     }
 
     fn do_cmp(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "CMP";
 
         let value = {
@@ -991,7 +985,6 @@ impl CPU {
     }
 
     fn do_sbc(&mut self, addr_mode: &AddrMode) {
-        // ???
         let opcode_name = "SBC";
 
         let value = {
@@ -1018,6 +1011,7 @@ impl CPU {
                 ),
             }
         };
+        let value = !value;
 
         trace_operand_value!(opcode_name, value);
         trace_register!(opcode_name, self.a);
@@ -1026,20 +1020,18 @@ impl CPU {
 
         let old_a = self.a;
         let mut need_to_set_carry = false;
-        self.a = self.a.wrapping_sub(value);
-        if self.a > old_a {
+        self.a = self.a.wrapping_add(value);
+        if self.a < old_a {
             need_to_set_carry = true;
         }
-
-        if !self.get_carry_flag() {
+        if self.get_carry_flag() {
             let old_a = self.a;
-            self.a = self.a.wrapping_sub(1);
+            self.a = self.a.wrapping_add(1);
 
-            if self.a > old_a {
+            if self.a < old_a {
                 need_to_set_carry = true;
             }
         }
-
         if need_to_set_carry {
             self.set_carry_flag();
         } else {
@@ -1059,7 +1051,6 @@ impl CPU {
     }
 
     fn do_php(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "PHP";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1081,7 +1072,6 @@ impl CPU {
     }
 
     fn do_bpl(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "BPL";
 
         let offset = {
@@ -1112,7 +1102,6 @@ impl CPU {
     }
 
     fn do_clc(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "CLC";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1133,7 +1122,6 @@ impl CPU {
     }
 
     fn do_jsr(&mut self, addr_mode: &AddrMode) {
-        // ?
         let opcode_name = "JSR";
         let target = {
             let operand = self.parse_operand(addr_mode);
@@ -1154,7 +1142,7 @@ impl CPU {
         trace_register!(opcode_name, self.s);
         trace_execute!(opcode_name);
 
-        let [ret_lsb, ret_msb] = (self.pc + 3).to_le_bytes();
+        let [ret_lsb, ret_msb] = (self.pc + 3 - 1).to_le_bytes();
         self.stack_push(ret_msb);
         self.stack_push(ret_lsb);
         self.pc = target;
@@ -1164,7 +1152,6 @@ impl CPU {
     }
 
     fn do_bit(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "BIT";
         let value = {
             let operand = self.parse_operand(addr_mode);
@@ -1210,7 +1197,6 @@ impl CPU {
     }
 
     fn do_plp(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "PLP";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1234,7 +1220,6 @@ impl CPU {
     }
 
     fn do_bmi(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "BMI";
 
         let offset = {
@@ -1265,7 +1250,6 @@ impl CPU {
     }
 
     fn do_sec(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "SEC";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1286,7 +1270,6 @@ impl CPU {
     }
 
     fn do_rti(&mut self, addr_mode: &AddrMode) {
-        // ?
         let opcode_name = "RTI";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1312,7 +1295,6 @@ impl CPU {
     }
 
     fn do_pha(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "PHA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1335,7 +1317,6 @@ impl CPU {
     }
 
     fn do_jmp(&mut self, addr_mode: &AddrMode) {
-        // ?
         // An original 6502 has does not correctly fetch the target address
         // if the indirect vector falls on a page boundary (e.g. $xxFF where
         // xx is any value from $00 to $FF). In this case fetches the LSB
@@ -1365,7 +1346,6 @@ impl CPU {
     }
 
     fn do_bvc(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "BVC";
 
         let offset = {
@@ -1396,7 +1376,6 @@ impl CPU {
     }
 
     fn do_cli(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "CLI";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1417,7 +1396,6 @@ impl CPU {
     }
 
     fn do_rts(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "RTS";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1426,7 +1404,7 @@ impl CPU {
             trace_execute!(opcode_name);
 
             let [lsb, msb] = [self.stack_pop(), self.stack_pop()];
-            self.pc = u16::from_le_bytes([lsb, msb]);
+            self.pc = u16::from_le_bytes([lsb, msb]) + 1;
 
             trace_register!(opcode_name, self.s);
             trace_register!(opcode_name, self.pc);
@@ -1441,7 +1419,6 @@ impl CPU {
     }
 
     fn do_pla(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "PLA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1467,7 +1444,6 @@ impl CPU {
     }
 
     fn do_bvs(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "BVS";
 
         let offset = {
@@ -1499,7 +1475,6 @@ impl CPU {
     }
 
     fn do_sei(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "SEI";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1520,7 +1495,6 @@ impl CPU {
     }
 
     fn do_sty(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "STY";
         let address = {
             let operand = self.parse_operand(addr_mode);
@@ -1551,7 +1525,6 @@ impl CPU {
     }
 
     fn do_dey(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "DEY";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1575,7 +1548,6 @@ impl CPU {
     }
 
     fn do_bcc(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "BCC";
 
         let offset = {
@@ -1606,7 +1578,6 @@ impl CPU {
     }
 
     fn do_tya(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "TYA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1631,7 +1602,6 @@ impl CPU {
     }
 
     fn do_ldy(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "LDY";
 
         let value = {
@@ -1669,7 +1639,6 @@ impl CPU {
     }
 
     fn do_tay(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "TAY";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1694,7 +1663,6 @@ impl CPU {
     }
 
     fn do_bcs(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "BCS";
 
         let offset = {
@@ -1725,7 +1693,6 @@ impl CPU {
     }
 
     fn do_clv(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "CLV";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1746,7 +1713,6 @@ impl CPU {
     }
 
     fn do_cpy(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "CPY";
 
         let value = {
@@ -1784,7 +1750,7 @@ impl CPU {
             self.clear_zero_flag();
         }
 
-        if (self.y - value) & 0b10000000 > 1 {
+        if self.y.wrapping_sub(value) & 0b10000000 > 1 {
             self.set_negative_flag();
         } else {
             self.clear_negative_flag();
@@ -1794,7 +1760,6 @@ impl CPU {
     }
 
     fn do_iny(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "INY";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1818,7 +1783,6 @@ impl CPU {
     }
 
     fn do_bne(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "BNE";
 
         let offset = {
@@ -1850,7 +1814,6 @@ impl CPU {
     }
 
     fn do_cld(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "CLD";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1871,7 +1834,6 @@ impl CPU {
     }
 
     fn do_cpx(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "CPX";
 
         let value = {
@@ -1909,7 +1871,7 @@ impl CPU {
             self.clear_zero_flag();
         }
 
-        if (self.x - value) & 0b10000000 > 1 {
+        if self.x.wrapping_sub(value) & 0b10000000 > 1 {
             self.set_negative_flag();
         } else {
             self.clear_negative_flag();
@@ -1920,7 +1882,6 @@ impl CPU {
     }
 
     fn do_inx(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "INX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1944,7 +1905,6 @@ impl CPU {
     }
 
     fn do_beq(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "BEQ";
 
         let offset = {
@@ -1975,7 +1935,6 @@ impl CPU {
     }
 
     fn do_sed(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "SED";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1996,7 +1955,6 @@ impl CPU {
     }
 
     fn do_asl(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "ASL";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2063,7 +2021,6 @@ impl CPU {
     }
 
     fn do_rol(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "ROL";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2140,7 +2097,6 @@ impl CPU {
     }
 
     fn do_lsr(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "LSR";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2209,7 +2165,6 @@ impl CPU {
     }
 
     fn do_ror(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "ROR";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2286,7 +2241,6 @@ impl CPU {
     }
 
     fn do_stx(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "STX";
 
         let address = {
@@ -2315,7 +2269,6 @@ impl CPU {
     }
 
     fn do_txa(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "TXA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2338,7 +2291,6 @@ impl CPU {
     }
 
     fn do_txs(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "TXS";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2360,7 +2312,6 @@ impl CPU {
     }
 
     fn do_ldx(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "LDX";
 
         let value = {
@@ -2398,7 +2349,6 @@ impl CPU {
     }
 
     fn do_tax(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "TAX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2421,7 +2371,6 @@ impl CPU {
     }
 
     fn do_tsx(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "TSX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2444,7 +2393,6 @@ impl CPU {
     }
 
     fn do_dec(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "DEC";
 
         let address = {
@@ -2483,7 +2431,6 @@ impl CPU {
     }
 
     fn do_dex(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "DEX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2507,7 +2454,6 @@ impl CPU {
     }
 
     fn do_inc(&mut self, addr_mode: &AddrMode) {
-        // +
         let opcode_name = "INC";
         let address = match addr_mode {
             AddrMode::ZeroPage => {
