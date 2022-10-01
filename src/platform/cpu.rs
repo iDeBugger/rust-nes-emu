@@ -246,7 +246,7 @@ impl CPU {
             OpCode::DEX => self.do_dex(&addr_mode),
             OpCode::INC => self.do_inc(&addr_mode),
             OpCode::NOP => self.do_nop(&addr_mode),
-            OpCode::BRK => return true,
+            OpCode::BRK => self.do_interrupt(),
         }
 
         if ![
@@ -262,6 +262,7 @@ impl CPU {
             OpCode::BCS,
             OpCode::BNE,
             OpCode::BEQ,
+            OpCode::BRK,
         ]
         .contains(&opcode)
         {
@@ -672,6 +673,19 @@ impl CPU {
         } else {
             self.clear_negative_flag();
         }
+    }
+
+    pub fn do_interrupt(&mut self) {
+        let [ret_lsb, ret_msb] = (self.pc + 2).to_le_bytes();
+        self.stack_push(ret_msb);
+        self.stack_push(ret_lsb);
+
+        self.stack_push(self.p | 0b00110000);
+
+        self.set_interrupt_disable_flag();
+
+        let mem = self.mem.borrow();
+        self.pc = u16::from_le_bytes([mem[0xFFFE], mem[0xFFFF]])
     }
 
     fn do_ora(&mut self, addr_mode: &AddrMode) {
