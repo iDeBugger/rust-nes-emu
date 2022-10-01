@@ -186,4 +186,16 @@ mod test {
         print_rom_result!(mem);
         assert_eq!(mem[0x6000], 0x0);
     }
+
+    #[test]
+    fn test_rom_08_ind_x() {
+        init();
+
+        let mut platform = Platform::new();
+        platform.load_rom_and_run("./tests/roms/08-ind_x.nes", true);
+
+        let mem = platform.memory.borrow();
+        print_rom_result!(mem);
+        assert_eq!(mem[0x6000], 0x0);
+    }
 }
