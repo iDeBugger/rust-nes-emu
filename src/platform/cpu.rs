@@ -610,11 +610,16 @@ impl CPU {
                     + self.y as u16,
             ),
             AddrMode::Indirect => {
-                let address_pointer =
+                let low_byte_pointer =
                     u16::from_le_bytes([mem[self.pc as usize + 1], mem[self.pc as usize + 2]]);
+                let high_byte_pointer = if low_byte_pointer & 0b11111111 == 0xFF {
+                    u16::from_le_bytes([0x00, mem[self.pc as usize + 2]])
+                } else {
+                    low_byte_pointer + 1
+                };
                 Operand::Memory(u16::from_le_bytes([
-                    mem[address_pointer as usize],
-                    mem[address_pointer as usize + 1],
+                    mem[low_byte_pointer as usize],
+                    mem[high_byte_pointer as usize],
                 ]))
             }
             AddrMode::IndirectX => {
