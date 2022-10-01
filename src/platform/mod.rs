@@ -258,4 +258,16 @@ mod test {
         print_rom_result!(mem);
         assert_eq!(mem[0x6000], 0x0);
     }
+
+    #[test]
+    fn test_rom_14_rti() {
+        init();
+
+        let mut platform = Platform::new();
+        platform.load_rom_and_run("./tests/roms/14-rti.nes", true);
+
+        let mem = platform.memory.borrow();
+        print_rom_result!(mem);
+        assert_eq!(mem[0x6000], 0x0);
+    }
 }
