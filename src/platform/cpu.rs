@@ -685,6 +685,7 @@ impl CPU {
                 (
                     AddrMode::Immediate
                     | AddrMode::ZeroPage
+                    | AddrMode::ZeroPageX
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteX
                     | AddrMode::AbsoluteY
@@ -724,6 +725,7 @@ impl CPU {
                 (
                     AddrMode::Immediate
                     | AddrMode::ZeroPage
+                    | AddrMode::ZeroPageX
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteX
                     | AddrMode::AbsoluteY
@@ -763,6 +765,7 @@ impl CPU {
                 (
                     AddrMode::Immediate
                     | AddrMode::ZeroPage
+                    | AddrMode::ZeroPageX
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteX
                     | AddrMode::AbsoluteY
@@ -2452,7 +2455,7 @@ impl CPU {
     fn do_inc(&mut self, addr_mode: &AddrMode) {
         let opcode_name = "INC";
         let address = match addr_mode {
-            AddrMode::ZeroPage => {
+            AddrMode::ZeroPage | AddrMode::ZeroPageX => {
                 let operand = self.parse_operand(addr_mode);
                 trace_operand!(opcode_name, operand);
                 match operand {
