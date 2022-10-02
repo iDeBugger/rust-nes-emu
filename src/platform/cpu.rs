@@ -163,9 +163,9 @@ impl CPU {
 
         {
             let mut mem = self.mem.borrow_mut();
-            let place = place as usize;
+            let place = place;
             for (program_index, program_cell) in program.iter().enumerate() {
-                let mem_index = place + program_index;
+                let mem_index = place + program_index as u16;
                 mem[mem_index] = *program_cell;
             }
         }
@@ -363,7 +363,7 @@ impl CPU {
     }
 
     fn parse_operator(&self) -> (OpCode, AddrMode) {
-        let opcode_byte = self.mem.borrow()[self.pc as usize];
+        let opcode_byte = self.mem.borrow()[self.pc];
         match opcode_byte {
             // ORA
             0x01 => (OpCode::ORA, AddrMode::IndirectX),
@@ -590,55 +590,43 @@ impl CPU {
                 )
             }
             AddrMode::Immediate => Operand::Memory(self.pc + 1),
-            AddrMode::ZeroPage => Operand::Memory(mem[self.pc as usize + 1] as u16),
-            AddrMode::ZeroPageX => {
-                Operand::Memory((mem[self.pc as usize + 1] as u16 + self.x as u16) % 256)
+            AddrMode::ZeroPage => Operand::Memory(mem[self.pc + 1] as u16),
+            AddrMode::ZeroPageX => Operand::Memory((mem[self.pc + 1] as u16 + self.x as u16) % 256),
+            AddrMode::ZeroPageY => Operand::Memory((mem[self.pc + 1] as u16 + self.y as u16) % 256),
+            AddrMode::Absolute => {
+                Operand::Memory(u16::from_le_bytes([mem[self.pc + 1], mem[self.pc + 2]]))
             }
-            AddrMode::ZeroPageY => {
-                Operand::Memory((mem[self.pc as usize + 1] as u16 + self.y as u16) % 256)
-            }
-            AddrMode::Absolute => Operand::Memory(u16::from_le_bytes([
-                mem[self.pc as usize + 1],
-                mem[self.pc as usize + 2],
-            ])),
             AddrMode::AbsoluteX => Operand::Memory(
-                u16::from_le_bytes([mem[self.pc as usize + 1], mem[self.pc as usize + 2]])
-                    + self.x as u16,
+                u16::from_le_bytes([mem[self.pc + 1], mem[self.pc + 2]]) + self.x as u16,
             ),
             AddrMode::AbsoluteY => Operand::Memory(
-                u16::from_le_bytes([mem[self.pc as usize + 1], mem[self.pc as usize + 2]])
-                    + self.y as u16,
+                u16::from_le_bytes([mem[self.pc + 1], mem[self.pc + 2]]) + self.y as u16,
             ),
             AddrMode::Indirect => {
-                let low_byte_pointer =
-                    u16::from_le_bytes([mem[self.pc as usize + 1], mem[self.pc as usize + 2]]);
+                let low_byte_pointer = u16::from_le_bytes([mem[self.pc + 1], mem[self.pc + 2]]);
                 let high_byte_pointer = if low_byte_pointer & 0b11111111 == 0xFF {
-                    u16::from_le_bytes([0x00, mem[self.pc as usize + 2]])
+                    u16::from_le_bytes([0x00, mem[self.pc + 2]])
                 } else {
                     low_byte_pointer + 1
                 };
                 Operand::Memory(u16::from_le_bytes([
-                    mem[low_byte_pointer as usize],
-                    mem[high_byte_pointer as usize],
+                    mem[low_byte_pointer],
+                    mem[high_byte_pointer],
                 ]))
             }
             AddrMode::IndirectX => {
-                let arg = mem[self.pc as usize + 1] as usize;
-                let x = self.x as usize;
+                let arg = mem[self.pc + 1] as u16;
+                let x = self.x as u16;
                 Operand::Memory(
                     (mem[(arg + x) % 256] as usize + mem[(arg + x + 1) % 256] as usize * 256)
                         as u16,
                 )
             }
             AddrMode::IndirectY => {
-                let arg = mem[self.pc as usize + 1];
-                Operand::Memory(
-                    mem[arg as usize] as u16
-                        + mem[(arg as usize + 1) % 256] as u16 * 256
-                        + self.y as u16,
-                )
+                let arg = mem[self.pc + 1] as u16;
+                Operand::Memory(mem[arg] as u16 + mem[(arg + 1) % 256] as u16 * 256 + self.y as u16)
             }
-            AddrMode::Relative => Operand::Offset(mem[self.pc as usize + 1] as i8),
+            AddrMode::Relative => Operand::Offset(mem[self.pc + 1] as i8),
             _ => unimplemented!(
                 "Operand parser for {:?} addressing mode is not implemented",
                 addr_mode
@@ -649,7 +637,7 @@ impl CPU {
     fn stack_push(&mut self, value: u8) {
         let mut mem = self.mem.borrow_mut();
         let stack_top = STACK_BASE + self.s as u16;
-        mem[stack_top as usize] = value;
+        mem[stack_top] = value;
 
         self.s = self.s.wrapping_sub(1);
     }
@@ -659,7 +647,7 @@ impl CPU {
 
         let mem = self.mem.borrow();
         let stack_top = STACK_BASE + self.s as u16;
-        let value = mem[stack_top as usize];
+        let value = mem[stack_top];
 
         return value;
     }
@@ -711,7 +699,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -751,7 +739,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -791,7 +779,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -831,7 +819,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -909,7 +897,7 @@ impl CPU {
         trace_register!(opcode_name, self.a);
 
         let mut mem = self.mem.borrow_mut();
-        mem[address as usize] = self.a;
+        mem[address] = self.a;
     }
 
     fn do_lda(&mut self, addr_mode: &AddrMode) {
@@ -930,7 +918,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -970,7 +958,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -1024,7 +1012,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -1181,7 +1169,7 @@ impl CPU {
             let mem = self.mem.borrow();
             match (addr_mode, &operand) {
                 (AddrMode::ZeroPage | AddrMode::Absolute, &Operand::Memory(address)) => {
-                    mem[address as usize]
+                    mem[address]
                 }
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
@@ -1543,7 +1531,7 @@ impl CPU {
         trace_execute!(opcode_name);
 
         let mut mem = self.mem.borrow_mut();
-        mem[address as usize] = self.y;
+        mem[address] = self.y;
     }
 
     fn do_dey(&mut self, addr_mode: &AddrMode) {
@@ -1638,7 +1626,7 @@ impl CPU {
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteX,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -1745,7 +1733,7 @@ impl CPU {
                 (
                     AddrMode::Immediate | AddrMode::ZeroPage | AddrMode::Absolute,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -1866,7 +1854,7 @@ impl CPU {
                 (
                     AddrMode::Immediate | AddrMode::ZeroPage | AddrMode::Absolute,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -2027,7 +2015,7 @@ impl CPU {
 
         let new_value;
         {
-            let value = self.mem.borrow_mut()[address as usize];
+            let value = self.mem.borrow_mut()[address];
             if value & 0b10000000 > 1 {
                 self.set_carry_flag();
             } else {
@@ -2036,7 +2024,7 @@ impl CPU {
             new_value = value << 1;
             self.update_flags(new_value);
         }
-        self.mem.borrow_mut()[address as usize] = new_value;
+        self.mem.borrow_mut()[address] = new_value;
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
@@ -2097,7 +2085,7 @@ impl CPU {
         let set_carry;
         let new_value;
         {
-            let value = &mut self.mem.borrow_mut()[address as usize];
+            let value = &mut self.mem.borrow_mut()[address];
             set_carry = *value & 0b10000000 > 1;
             *value <<= 1;
             if old_carry {
@@ -2166,7 +2154,7 @@ impl CPU {
         let mut set_carry = false;
         let new_value;
         {
-            let value = &mut self.mem.borrow_mut()[address as usize];
+            let value = &mut self.mem.borrow_mut()[address];
             if *value & 0b00000001 > 0 {
                 set_carry = true
             }
@@ -2239,7 +2227,7 @@ impl CPU {
         let mut set_carry;
         let new_value;
         {
-            let value = &mut self.mem.borrow_mut()[address as usize];
+            let value = &mut self.mem.borrow_mut()[address];
             set_carry = *value & 0b00000001 > 0;
             *value >>= 1;
             if old_carry {
@@ -2283,7 +2271,7 @@ impl CPU {
         trace_execute!(opcode_name);
 
         let mut mem = self.mem.borrow_mut();
-        mem[address as usize] = self.x;
+        mem[address] = self.x;
     }
 
     fn do_txa(&mut self, addr_mode: &AddrMode) {
@@ -2344,7 +2332,7 @@ impl CPU {
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteY,
                     &Operand::Memory(address),
-                ) => mem[address as usize],
+                ) => mem[address],
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -2440,8 +2428,8 @@ impl CPU {
         let new_value;
         {
             let mut mem = self.mem.borrow_mut();
-            mem[address as usize] = mem[address as usize].wrapping_sub(1);
-            new_value = mem[address as usize];
+            mem[address] = mem[address].wrapping_sub(1);
+            new_value = mem[address];
         }
         self.update_flags(new_value);
 
@@ -2509,9 +2497,9 @@ impl CPU {
 
         {
             let mut mem = self.mem.borrow_mut();
-            mem[address as usize] = mem[address as usize].wrapping_add(1);
+            mem[address] = mem[address].wrapping_add(1);
         }
-        let new_value = self.mem.borrow()[address as usize];
+        let new_value = self.mem.borrow()[address];
         self.update_flags(new_value);
 
         trace_flags!(opcode_name, self.p);
@@ -2526,14 +2514,14 @@ impl CPU {
 
 #[cfg(test)]
 mod test {
-    use crate::rom::INesFormat;
+    use crate::platform::memory::Memory;
 
     use super::CPU;
     use std::{cell::RefCell, rc::Rc};
 
     #[test]
     fn test_simple_program() {
-        let mem = Rc::new(RefCell::new([0u8; 65536]));
+        let mem = Rc::new(RefCell::new(Memory::new()));
         let mut cpu = CPU::new(mem.clone());
 
         cpu.load_and_run(
@@ -2561,7 +2549,7 @@ mod test {
 
     #[test]
     fn test_simple_flags() {
-        let mem = Rc::new(RefCell::new([0u8; 65536]));
+        let mem = Rc::new(RefCell::new(Memory::new()));
         let mut cpu = CPU::new(mem.clone());
 
         cpu.load_and_run(
@@ -2583,7 +2571,7 @@ mod test {
 
     #[test]
     fn test_lda_immediate_simple() {
-        let mem = Rc::new(RefCell::new([0u8; 65536]));
+        let mem = Rc::new(RefCell::new(Memory::new()));
         let mut cpu = CPU::new(mem.clone());
 
         cpu.load_and_run(

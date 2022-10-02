@@ -25,7 +25,7 @@ struct Platform {
 
 impl Platform {
     pub fn new() -> Self {
-        let memory = Rc::new(RefCell::new([0u8; 65536]));
+        let memory = Rc::new(RefCell::new(Memory::new()));
         let cpu = CPU::new(memory.clone());
         let ppu = PPU::new(memory.clone());
         Platform {
@@ -46,10 +46,10 @@ impl Platform {
             let mut memory = self.memory.borrow_mut();
             debug!("Loading ROM PRG data into the memory...");
             for (i, byte) in rom.rom.prg_rom_data.iter().take(16 * 1024).enumerate() {
-                memory[0x8000 + i] = *byte;
+                memory[0x8000 + i as u16] = *byte;
             }
             for (i, byte) in rom.rom.prg_rom_data.iter().skip(16 * 1024).enumerate() {
-                memory[0xC000 + i] = *byte;
+                memory[0xC000 + i as u16] = *byte;
             }
             trace!("ROM PRG data: {:#X?}", rom.rom.prg_rom_data);
             debug!("ROM PRG data is loaded into the memory");

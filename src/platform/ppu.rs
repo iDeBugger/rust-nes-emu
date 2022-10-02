@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use super::memory::Memory;
 
-const PPUSTATUS: usize = 0x2002;
+const PPUSTATUS: u16 = 0x2002;
 
 pub struct PPU {
     mem: Rc<RefCell<Memory>>,
