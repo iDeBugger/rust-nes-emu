@@ -6,18 +6,11 @@ use crate::rom::INesFormat;
 
 use self::{cpu::CPU, memory::Memory, ppu::PPU};
 
-pub mod cpu;
-pub mod memory;
-pub mod ppu;
+mod cpu;
+mod memory;
+mod ppu;
 
-enum PlatformState {
-    NOT_INITIALIZED,
-    ROM_LOADED,
-    RUNNING,
-}
-
-struct Platform {
-    state: PlatformState,
+pub struct Platform {
     memory: Rc<RefCell<Memory>>,
     cpu: CPU,
     ppu: PPU,
@@ -28,12 +21,7 @@ impl Platform {
         let memory = Rc::new(RefCell::new(Memory::new()));
         let cpu = CPU::new(memory.clone());
         let ppu = PPU::new(memory.clone());
-        Platform {
-            state: PlatformState::NOT_INITIALIZED,
-            memory,
-            cpu,
-            ppu,
-        }
+        Platform { memory, cpu, ppu }
     }
 
     pub fn load_rom_and_run(&mut self, rom_path: &str, stop_at_cpu_loop: bool) {
