@@ -1,27 +1,25 @@
-use std::{cell::RefCell, rc::Rc};
-
 use log::{debug, trace};
 
 use crate::rom::INesFormat;
 
-use self::{cpu::CPU, memory::Memory, ppu::PPU};
+use self::{
+    cpu::{CPUContext, CPU},
+    ppu::PPU,
+};
 
 mod cpu;
-mod memory;
 mod ppu;
 
 pub struct Platform {
-    memory: Rc<RefCell<Memory>>,
     cpu: CPU,
     ppu: PPU,
 }
 
 impl Platform {
     pub fn new() -> Self {
-        let memory = Rc::new(RefCell::new(Memory::new()));
-        let cpu = CPU::new(memory.clone());
-        let ppu = PPU::new(memory.clone());
-        Platform { memory, cpu, ppu }
+        let ppu = PPU::new();
+        let cpu = CPU::new();
+        Platform { cpu, ppu }
     }
 
     pub fn load_rom_and_run(&mut self, rom_path: &str, stop_at_cpu_loop: bool) {
@@ -29,36 +27,35 @@ impl Platform {
         let rom = INesFormat::from_file(rom_path);
         debug!("ROM loaded");
 
-        let start = {
-            debug!("Borrowing the memory...");
-            let mut memory = self.memory.borrow_mut();
-            debug!("Loading ROM PRG data into the memory...");
-            for (i, byte) in rom.rom.prg_rom_data.iter().take(16 * 1024).enumerate() {
-                memory[0x8000 + i as u16] = *byte;
-            }
-            for (i, byte) in rom.rom.prg_rom_data.iter().skip(16 * 1024).enumerate() {
-                memory[0xC000 + i as u16] = *byte;
-            }
-            trace!("ROM PRG data: {:#X?}", rom.rom.prg_rom_data);
-            debug!("ROM PRG data is loaded into the memory");
-
-            u16::from_le_bytes([memory[0xFFFC], memory[0xFFFD]])
-        };
-        debug!("CPU program counter value from 0xFFFC: {:#06X}", start);
-
-        self.cpu.pc = start;
+        debug!("Loading ROM PRG data into the memory...");
+        let mut ctx = Platform::build_cpu_context(&mut self.ppu);
+        for (i, byte) in rom.rom.prg_rom_data.iter().take(16 * 1024).enumerate() {
+            self.cpu.write_mem(&mut ctx, 0x8000 + i as u16, *byte);
+        }
+        for (i, byte) in rom.rom.prg_rom_data.iter().skip(16 * 1024).enumerate() {
+            self.cpu.write_mem(&mut ctx, 0xC000 + i as u16, *byte);
+        }
+        trace!("ROM PRG data: {:#X?}", rom.rom.prg_rom_data);
+        debug!("ROM PRG data is loaded into the memory");
 
         self.run(stop_at_cpu_loop);
     }
 
     fn run(&mut self, stop_at_cpu_loop: bool) {
         loop {
-            if self.cpu.run_step(stop_at_cpu_loop) {
+            let mut ctx = Platform::build_cpu_context(&mut self.ppu);
+            if self.cpu.run_step(&mut ctx, stop_at_cpu_loop) {
                 break;
             };
             // for _ in 0..3 {
             //     self.ppu.run_step();
             // }
+        }
+    }
+
+    fn build_cpu_context<'ppu>(ppu: &'ppu mut PPU) -> CPUContext<'ppu> {
+        CPUContext {
+            ppu_registers: &mut ppu.registers,
         }
     }
 }
@@ -69,11 +66,12 @@ mod test {
     use log::{debug, LevelFilter};
 
     macro_rules! print_rom_result {
-        ($mem:tt) => {
+        ($platform:tt) => {
             let mut vec_str = vec![];
             let mut n = 0x6004;
-            while $mem[n] != 0 {
-                vec_str.push($mem[n]);
+            let mut ctx = Platform::build_cpu_context(&mut $platform.ppu);
+            while $platform.cpu.read_mem(&mut ctx, n) != 0 {
+                vec_str.push($platform.cpu.read_mem(&mut ctx, n));
                 n += 1;
             }
             let str = vec_str
@@ -92,194 +90,223 @@ mod test {
     }
 
     #[test]
-    fn test_rom_01_basics() {
+    fn test_rom_logic_01_basics() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/01-basics.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/01-basics.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_02_implied() {
+    fn test_rom_logic_02_implied() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/02-implied.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/02-implied.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_03_immediate() {
+    fn test_rom_logic_03_immediate() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/03-immediate.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/03-immediate.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_04_zero_page() {
+    fn test_rom_logic_04_zero_page() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/04-zero_page.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/04-zero_page.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_05_zp_xy() {
+    fn test_rom_logic_05_zp_xy() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/05-zp_xy.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/05-zp_xy.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_06_absolute() {
+    fn test_rom_logic_06_absolute() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/06-absolute.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/06-absolute.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_07_abs_xy() {
+    fn test_rom_logic_07_abs_xy() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/07-abs_xy.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/07-abs_xy.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_08_ind_x() {
+    fn test_rom_logic_08_ind_x() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/08-ind_x.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/08-ind_x.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_09_ind_y() {
+    fn test_rom_logic_09_ind_y() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/09-ind_y.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/09-ind_y.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_10_branches() {
+    fn test_rom_logic_10_branches() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/10-branches.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/10-branches.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_11_stack() {
+    fn test_rom_logic_11_stack() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/11-stack.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/11-stack.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_12_jmp_jsr() {
+    fn test_rom_logic_12_jmp_jsr() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/12-jmp_jsr.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/12-jmp_jsr.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_13_rts() {
+    fn test_rom_logic_13_rts() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/13-rts.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/13-rts.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_14_rti() {
+    fn test_rom_logic_14_rti() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/14-rti.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/14-rti.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_15_brk() {
+    fn test_rom_logic_15_brk() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/15-brk.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/15-brk.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
     #[test]
-    fn test_rom_16_special() {
+    fn test_rom_logic_16_special() {
         init();
 
         let mut platform = Platform::new();
-        platform.load_rom_and_run("./tests/roms/16-special.nes", true);
+        platform.load_rom_and_run("./tests/roms/instructions_logic/16-special.nes", true);
 
-        let mem = platform.memory.borrow();
-        print_rom_result!(mem);
-        assert_eq!(mem[0x6000], 0x0);
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
+    }
+
+    #[test]
+    fn test_rom_timings_1() {
+        init();
+
+        let mut platform = Platform::new();
+        platform.load_rom_and_run("./tests/roms/instructions_timings/1-instr_timing.nes", true);
+
+        print_rom_result!(platform);
+
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 }

@@ -1,19 +1,17 @@
-use std::{cell::RefCell, rc::Rc};
+mod registers;
 
-use super::memory::Memory;
-
-const PPUSTATUS: u16 = 0x2002;
+pub use self::registers::PPURegisters;
 
 pub struct PPU {
-    mem: Rc<RefCell<Memory>>,
+    pub registers: PPURegisters,
     scanline: u16,
     cycle: u16,
 }
 
 impl PPU {
-    pub fn new(mem: Rc<RefCell<Memory>>) -> Self {
+    pub fn new() -> Self {
         let mut ppu = PPU {
-            mem,
+            registers: PPURegisters::new(),
             scanline: 0,
             cycle: 0,
         };
@@ -37,13 +35,13 @@ impl PPU {
     }
 
     fn set_vbl_flag(&mut self) {
-        let mut mem = self.mem.borrow_mut();
-        mem[PPUSTATUS] |= 0b10000000;
+        let ppustatus = self.registers.read_ppustatus();
+        self.registers.write_ppustatus(ppustatus | 0b10000000);
     }
 
     fn clear_vbl_flag(&mut self) {
-        let mut mem = self.mem.borrow_mut();
-        mem[PPUSTATUS] &= 0b01111111;
+        let ppustatus = self.registers.read_ppustatus();
+        self.registers.write_ppustatus(ppustatus & 0b01111111);
     }
 
     fn process_visible_scanline(&mut self) {}
