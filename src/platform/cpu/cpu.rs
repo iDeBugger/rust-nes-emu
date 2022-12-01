@@ -351,7 +351,7 @@ impl CPU {
         self.p &= 0b01111111
     }
 
-    fn parse_operator(&mut self, ctx: &mut CPUContext<'_>) -> (OpCode, AddrMode) {
+    fn parse_operator(&mut self, ctx: &mut CPUContext<'_, '_>) -> (OpCode, AddrMode) {
         let opcode_byte = self.mem.read(ctx, self.pc);
         match opcode_byte {
             // ORA

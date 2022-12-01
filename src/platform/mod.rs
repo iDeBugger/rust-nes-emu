@@ -1,6 +1,6 @@
 use log::{debug, trace};
 
-use crate::rom::INesFormat;
+use crate::cartridge::{self, Cartridge};
 
 use self::{
     cpu::{CPUContext, CPU},
@@ -13,37 +13,38 @@ mod ppu;
 pub struct Platform {
     cpu: CPU,
     ppu: PPU,
+    cartridge: Option<Cartridge>,
 }
 
 impl Platform {
     pub fn new() -> Self {
         let ppu = PPU::new();
         let cpu = CPU::new();
-        Platform { cpu, ppu }
+        Platform {
+            cpu,
+            ppu,
+            cartridge: None,
+        }
     }
 
     pub fn load_rom_and_run(&mut self, rom_path: &str, stop_at_cpu_loop: bool) {
         debug!("Loading ROM at path {}", rom_path);
-        let rom = INesFormat::from_file(rom_path);
+        let cartridge = Cartridge::from_ines(rom_path);
         debug!("ROM loaded");
 
-        debug!("Loading ROM PRG data into the memory...");
-        let mut ctx = Platform::build_cpu_context(&mut self.ppu);
-        for (i, byte) in rom.rom.prg_rom_data.iter().take(16 * 1024).enumerate() {
-            self.cpu.write_mem(&mut ctx, 0x8000 + i as u16, *byte);
-        }
-        for (i, byte) in rom.rom.prg_rom_data.iter().skip(16 * 1024).enumerate() {
-            self.cpu.write_mem(&mut ctx, 0xC000 + i as u16, *byte);
-        }
-        trace!("ROM PRG data: {:#X?}", rom.rom.prg_rom_data);
-        debug!("ROM PRG data is loaded into the memory");
+        self.cartridge = Some(cartridge);
 
         self.run(stop_at_cpu_loop);
     }
 
     fn run(&mut self, stop_at_cpu_loop: bool) {
+        let cartridge = match &mut self.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+
         loop {
-            let mut ctx = Platform::build_cpu_context(&mut self.ppu);
+            let mut ctx = Platform::build_cpu_context(&mut self.ppu, cartridge);
             if self.cpu.run_step(&mut ctx, stop_at_cpu_loop) {
                 break;
             };
@@ -53,9 +54,13 @@ impl Platform {
         }
     }
 
-    fn build_cpu_context<'ppu>(ppu: &'ppu mut PPU) -> CPUContext<'ppu> {
+    fn build_cpu_context<'ppu, 'cartridge>(
+        ppu: &'ppu mut PPU,
+        cartridge: &'cartridge mut Cartridge,
+    ) -> CPUContext<'ppu, 'cartridge> {
         CPUContext {
             ppu_registers: &mut ppu.registers,
+            cartidge: cartridge,
         }
     }
 }
@@ -66,12 +71,11 @@ mod test {
     use log::{debug, LevelFilter};
 
     macro_rules! print_rom_result {
-        ($platform:tt) => {
+        ($platform:tt, $cpu_ctx:tt) => {
             let mut vec_str = vec![];
             let mut n = 0x6004;
-            let mut ctx = Platform::build_cpu_context(&mut $platform.ppu);
-            while $platform.cpu.read_mem(&mut ctx, n) != 0 {
-                vec_str.push($platform.cpu.read_mem(&mut ctx, n));
+            while $platform.cpu.read_mem(&mut $cpu_ctx, n) != 0 {
+                vec_str.push($platform.cpu.read_mem(&mut $cpu_ctx, n));
                 n += 1;
             }
             let str = vec_str
@@ -96,9 +100,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/01-basics.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -109,9 +117,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/02-implied.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -122,9 +134,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/03-immediate.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -135,9 +151,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/04-zero_page.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -148,9 +168,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/05-zp_xy.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -161,9 +185,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/06-absolute.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -174,9 +202,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/07-abs_xy.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -187,9 +219,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/08-ind_x.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -200,9 +236,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/09-ind_y.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -213,9 +253,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/10-branches.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -226,9 +270,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/11-stack.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -239,9 +287,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/12-jmp_jsr.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -252,9 +304,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/13-rts.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -265,9 +321,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/14-rti.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -278,9 +338,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/15-brk.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -291,9 +355,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_logic/16-special.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 
@@ -304,9 +372,13 @@ mod test {
         let mut platform = Platform::new();
         platform.load_rom_and_run("./tests/roms/instructions_timings/1-instr_timing.nes", true);
 
-        print_rom_result!(platform);
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        print_rom_result!(platform, ctx);
 
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu);
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
     }
 }

@@ -17,7 +17,7 @@ impl CPUMemory {
             0x4000..=0x4013 => 0,
             0x4014 => ctx.ppu_registers.read_oamdma(),
             0x4015..=0x401F => 0,
-            0x4020..=0xFFFF => 0,
+            0x4020..=0xFFFF => ctx.cartidge.read_cpu_mem(address),
         }
     }
 
@@ -44,7 +44,7 @@ impl CPUMemory {
             0x4000..=0x4013 => {}
             0x4014 => ctx.ppu_registers.write_oamdma(value),
             0x4015..=0x401F => {}
-            0x4020..=0xFFFF => {}
+            0x4020..=0xFFFF => ctx.cartidge.write_cpu_mem(address, value),
         }
     }
 

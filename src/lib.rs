@@ -1,5 +1,5 @@
 pub mod platform;
-pub mod rom;
+pub mod cartridge;
 
 #[cfg(test)]
 mod tests {
