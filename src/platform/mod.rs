@@ -29,8 +29,14 @@ impl Platform {
 
     pub fn load_rom_and_run(&mut self, rom_path: &str, stop_at_cpu_loop: bool) {
         debug!("Loading ROM at path {}", rom_path);
-        let cartridge = Cartridge::from_ines(rom_path);
+        let mut cartridge = Cartridge::from_ines(rom_path);
         debug!("ROM loaded");
+
+        let mut ctx = Platform::build_cpu_context(&mut self.ppu, &mut cartridge);
+        self.cpu.pc = u16::from_le_bytes([
+            self.cpu.read_mem(&mut ctx, 0xFFFC),
+            self.cpu.read_mem(&mut ctx, 0xFFFD),
+        ]);
 
         self.cartridge = Some(cartridge);
 
