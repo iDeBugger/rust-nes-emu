@@ -1,16 +1,19 @@
-use log::{debug, trace};
+use log::debug;
 
-use crate::cartridge::{self, Cartridge};
+use crate::cartridge::Cartridge;
 
 use self::{
+    apu::APU,
     cpu::{CPUContext, CPU},
     ppu::PPU,
 };
 
+mod apu;
 mod cpu;
 mod ppu;
 
 pub struct Platform {
+    apu: APU,
     cpu: CPU,
     ppu: PPU,
     cartridge: Option<Cartridge>,
@@ -18,9 +21,11 @@ pub struct Platform {
 
 impl Platform {
     pub fn new() -> Self {
-        let ppu = PPU::new();
+        let apu = APU::new();
         let cpu = CPU::new();
+        let ppu = PPU::new();
         Platform {
+            apu,
             cpu,
             ppu,
             cartridge: None,
@@ -32,7 +37,7 @@ impl Platform {
         let mut cartridge = Cartridge::from_ines(rom_path);
         debug!("ROM loaded");
 
-        let mut ctx = Platform::build_cpu_context(&mut self.ppu, &mut cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut self.ppu, &mut self.apu, &mut cartridge);
         self.cpu.pc = u16::from_le_bytes([
             self.cpu.read_mem(&mut ctx, 0xFFFC),
             self.cpu.read_mem(&mut ctx, 0xFFFD),
@@ -50,22 +55,25 @@ impl Platform {
         };
 
         loop {
-            let mut ctx = Platform::build_cpu_context(&mut self.ppu, cartridge);
+            let mut ctx = Platform::build_cpu_context(&mut self.ppu, &mut self.apu, cartridge);
             if self.cpu.run_step(&mut ctx, stop_at_cpu_loop) {
                 break;
             };
+            self.apu.run_step();
             // for _ in 0..3 {
             //     self.ppu.run_step();
             // }
         }
     }
 
-    fn build_cpu_context<'ppu, 'cartridge>(
+    fn build_cpu_context<'ppu, 'apu, 'cartridge>(
         ppu: &'ppu mut PPU,
+        apu: &'apu mut APU,
         cartridge: &'cartridge mut Cartridge,
-    ) -> CPUContext<'ppu, 'cartridge> {
+    ) -> CPUContext<'ppu, 'apu, 'cartridge> {
         CPUContext {
             ppu_registers: &mut ppu.registers,
+            apu,
             cartidge: cartridge,
         }
     }
@@ -110,7 +118,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -127,7 +135,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -144,7 +152,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -161,7 +169,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -178,7 +186,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -195,7 +203,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -212,7 +220,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -229,7 +237,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -246,7 +254,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -263,7 +271,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -280,7 +288,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -297,7 +305,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -314,7 +322,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -331,7 +339,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -348,7 +356,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -365,7 +373,7 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
@@ -382,7 +390,41 @@ mod test {
             Some(cartridge) => cartridge,
             None => panic!("Can't run the platform without a cartridge inserted"),
         };
-        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, cartridge);
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
+        print_rom_result!(platform, ctx);
+
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
+    }
+
+    #[test]
+    fn test_apu_1() {
+        init();
+
+        let mut platform = Platform::new();
+        platform.load_rom_and_run("./tests/roms/apu/1-len_ctr.nes", true);
+
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
+        print_rom_result!(platform, ctx);
+
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
+    }
+
+    #[test]
+    fn test_apu_2() {
+        init();
+
+        let mut platform = Platform::new();
+        platform.load_rom_and_run("./tests/roms/apu/2-len_table.nes", true);
+
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
         print_rom_result!(platform, ctx);
 
         assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);

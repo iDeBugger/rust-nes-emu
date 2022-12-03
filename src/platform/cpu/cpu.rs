@@ -37,16 +37,6 @@ macro_rules! trace_execute {
     };
 }
 
-#[derive(Debug)]
-enum Register {
-    A,
-    X,
-    Y,
-    PC,
-    S,
-    P,
-}
-
 #[derive(Debug, Clone, Copy)]
 enum AddrMode {
     Implicit,
@@ -140,6 +130,7 @@ pub struct CPU {
     s: u8,
     p: u8,
     mem: CPUMemory,
+    free_cycles: Option<u8>,
 }
 
 const STACK_BASE: u16 = 0x0100;
@@ -155,6 +146,7 @@ impl CPU {
             s: 0xFD,
             p: 0x34,
             mem,
+            free_cycles: None,
         }
     }
 
@@ -168,6 +160,15 @@ impl CPU {
 
     pub fn run_step(&mut self, ctx: &mut CPUContext, stop_at_loop: bool) -> bool {
         trace!("Running CPU step...");
+        self.free_cycles = self.free_cycles.map(|free_cycles| free_cycles - 1);
+        if let Some(cycles) = self.free_cycles {
+            if cycles == 0 {
+                self.free_cycles = None;
+            } else {
+                return false;
+            }
+        }
+
         let old_pc = self.pc;
 
         let (opcode, addr_mode) = self.parse_operator(ctx);
@@ -215,7 +216,7 @@ impl CPU {
             OpCode::CPY => self.do_cpy(ctx, &addr_mode),
             OpCode::INY => self.do_iny(ctx, &addr_mode),
             OpCode::BNE => self.do_bne(ctx, &addr_mode),
-            OpCode::CLD => self.do_cld(&addr_mode),
+            OpCode::CLD => self.do_cld(ctx, &addr_mode),
             OpCode::CPX => self.do_cpx(ctx, &addr_mode),
             OpCode::INX => self.do_inx(ctx, &addr_mode),
             OpCode::BEQ => self.do_beq(ctx, &addr_mode),
@@ -270,6 +271,8 @@ impl CPU {
                 AddrMode::IndirectY => 2,
             }
         }
+
+        self.update_free_cycles(&opcode, &addr_mode);
 
         if stop_at_loop && self.pc == old_pc {
             debug!("We are in a loop, Kowalsky!");
@@ -351,7 +354,7 @@ impl CPU {
         self.p &= 0b01111111
     }
 
-    fn parse_operator(&mut self, ctx: &mut CPUContext<'_, '_>) -> (OpCode, AddrMode) {
+    fn parse_operator(&mut self, ctx: &mut CPUContext<'_, '_, '_>) -> (OpCode, AddrMode) {
         let opcode_byte = self.mem.read(ctx, self.pc);
         match opcode_byte {
             // ORA
@@ -641,8 +644,189 @@ impl CPU {
         }
     }
 
+    fn update_free_cycles(&mut self, opcode: &OpCode, addr_mode: &AddrMode) {
+        self.free_cycles = match addr_mode {
+            AddrMode::Implicit => match opcode {
+                OpCode::TYA
+                | OpCode::DEY
+                | OpCode::SEI
+                | OpCode::CLI
+                | OpCode::TAY
+                | OpCode::CLV
+                | OpCode::INY
+                | OpCode::CLD
+                | OpCode::INX
+                | OpCode::SED
+                | OpCode::TXA
+                | OpCode::TAX
+                | OpCode::DEX
+                | OpCode::CLC
+                | OpCode::SEC
+                | OpCode::NOP => Some(2),
+                OpCode::PHA | OpCode::PHP => Some(3),
+                OpCode::PLA | OpCode::PLP => Some(4),
+                OpCode::RTS | OpCode::RTI => Some(6),
+                OpCode::BRK => Some(7),
+                _ => None,
+            },
+            AddrMode::Immediate => match opcode {
+                OpCode::ADC
+                | OpCode::AND
+                | OpCode::CMP
+                | OpCode::CPX
+                | OpCode::CPY
+                | OpCode::EOR
+                | OpCode::LDA
+                | OpCode::LDX
+                | OpCode::LDY
+                | OpCode::ORA
+                | OpCode::SBC => Some(2),
+                _ => None,
+            },
+            AddrMode::ZeroPage => match opcode {
+                OpCode::ADC
+                | OpCode::AND
+                | OpCode::BIT
+                | OpCode::CMP
+                | OpCode::CPX
+                | OpCode::CPY
+                | OpCode::EOR
+                | OpCode::LDA
+                | OpCode::LDX
+                | OpCode::LDY
+                | OpCode::ORA
+                | OpCode::SBC
+                | OpCode::STA
+                | OpCode::STX
+                | OpCode::STY => Some(3),
+                OpCode::ASL
+                | OpCode::DEC
+                | OpCode::INC
+                | OpCode::LSR
+                | OpCode::ROL
+                | OpCode::ROR => Some(5),
+                _ => None,
+            },
+            AddrMode::ZeroPageX => match opcode {
+                OpCode::ADC
+                | OpCode::AND
+                | OpCode::CMP
+                | OpCode::EOR
+                | OpCode::LDA
+                | OpCode::LDY
+                | OpCode::ORA
+                | OpCode::SBC
+                | OpCode::STA
+                | OpCode::STY => Some(4),
+                OpCode::ASL
+                | OpCode::DEC
+                | OpCode::INC
+                | OpCode::LSR
+                | OpCode::ROL
+                | OpCode::ROR => Some(6),
+                _ => None,
+            },
+            AddrMode::ZeroPageY => match opcode {
+                OpCode::LDX | OpCode::STX => Some(4),
+                _ => None,
+            },
+            AddrMode::Absolute => match opcode {
+                OpCode::ADC
+                | OpCode::AND
+                | OpCode::BIT
+                | OpCode::CMP
+                | OpCode::CPX
+                | OpCode::CPY
+                | OpCode::EOR
+                | OpCode::LDA
+                | OpCode::LDX
+                | OpCode::LDY
+                | OpCode::ORA
+                | OpCode::SBC
+                | OpCode::STA
+                | OpCode::STX
+                | OpCode::STY => Some(4),
+                OpCode::ASL
+                | OpCode::DEC
+                | OpCode::INC
+                | OpCode::LSR
+                | OpCode::ROL
+                | OpCode::ROR
+                | OpCode::JSR => Some(6),
+                OpCode::JMP => Some(3),
+                _ => None,
+            },
+            AddrMode::AbsoluteX => match opcode {
+                OpCode::ADC
+                | OpCode::AND
+                | OpCode::CMP
+                | OpCode::EOR
+                | OpCode::LDA
+                | OpCode::LDY
+                | OpCode::ORA
+                | OpCode::SBC => Some(4), // TODO: Have to be 4+
+                OpCode::STA => Some(5),
+                OpCode::ASL
+                | OpCode::DEC
+                | OpCode::INC
+                | OpCode::LSR
+                | OpCode::ROL
+                | OpCode::ROR => Some(7),
+                _ => None,
+            },
+            AddrMode::AbsoluteY => match opcode {
+                OpCode::ADC
+                | OpCode::AND
+                | OpCode::CMP
+                | OpCode::EOR
+                | OpCode::LDA
+                | OpCode::LDX
+                | OpCode::ORA
+                | OpCode::SBC => Some(4), // TODO: Have to be 4+
+                OpCode::STA => Some(5),
+                _ => None,
+            },
+            AddrMode::Relative => match opcode {
+                OpCode::BCC
+                | OpCode::BCS
+                | OpCode::BEQ
+                | OpCode::BMI
+                | OpCode::BNE
+                | OpCode::BPL
+                | OpCode::BVC
+                | OpCode::BVS => Some(2), // TODO: Have to be +1 if branch succeeds +2 if to a new page
+                _ => None,
+            },
+            AddrMode::Indirect => match opcode {
+                OpCode::JMP => Some(5),
+                _ => None,
+            },
+            AddrMode::IndirectX => match opcode {
+                OpCode::ADC
+                | OpCode::AND
+                | OpCode::CMP
+                | OpCode::EOR
+                | OpCode::LDA
+                | OpCode::ORA
+                | OpCode::SBC
+                | OpCode::STA => Some(6),
+                _ => None,
+            },
+            AddrMode::IndirectY => match opcode {
+                OpCode::ADC
+                | OpCode::AND
+                | OpCode::CMP
+                | OpCode::EOR
+                | OpCode::LDA
+                | OpCode::ORA
+                | OpCode::SBC => Some(5), // TODO: Have to be 5+
+                OpCode::STA => Some(6),
+                _ => None,
+            },
+        }
+    }
+
     fn stack_push(&mut self, ctx: &mut CPUContext, value: u8) {
-        let mem = &mut self.mem;
         let stack_top = STACK_BASE + self.s as u16;
         self.write_mem(ctx, stack_top, value);
 
@@ -1816,7 +2000,7 @@ impl CPU {
         trace_register!(opcode_name, self.pc);
     }
 
-    fn do_cld(&mut self, addr_mode: &AddrMode) {
+    fn do_cld(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
         let opcode_name = "CLD";
 
         if let AddrMode::Implicit = addr_mode {
