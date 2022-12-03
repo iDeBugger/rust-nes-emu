@@ -178,7 +178,7 @@ impl CPU {
             addr_mode,
             self.pc
         );
-        match opcode {
+        self.free_cycles = match opcode {
             OpCode::ORA => self.do_ora(ctx, &addr_mode),
             OpCode::AND => self.do_and(ctx, &addr_mode),
             OpCode::EOR => self.do_eor(ctx, &addr_mode),
@@ -237,7 +237,7 @@ impl CPU {
             OpCode::INC => self.do_inc(ctx, &addr_mode),
             OpCode::NOP => self.do_nop(&addr_mode),
             OpCode::BRK => self.do_interrupt(ctx),
-        }
+        };
 
         if ![
             OpCode::JMP,
@@ -271,8 +271,6 @@ impl CPU {
                 AddrMode::IndirectY => 2,
             }
         }
-
-        self.update_free_cycles(&opcode, &addr_mode);
 
         if stop_at_loop && self.pc == old_pc {
             debug!("We are in a loop, Kowalsky!");
@@ -572,7 +570,7 @@ impl CPU {
         }
     }
 
-    fn parse_operand(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Operand {
+    fn parse_operand(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> (Operand, bool) {
         match addr_mode {
             AddrMode::Implicit => {
                 unreachable!(
@@ -580,30 +578,44 @@ impl CPU {
                     addr_mode
                 )
             }
-            AddrMode::Immediate => Operand::Memory(self.pc + 1),
-            AddrMode::ZeroPage => Operand::Memory(self.read_mem(ctx, self.pc + 1) as u16),
-            AddrMode::ZeroPageX => {
-                Operand::Memory((self.read_mem(ctx, self.pc + 1) as u16 + self.x as u16) % 256)
-            }
-            AddrMode::ZeroPageY => {
-                Operand::Memory((self.read_mem(ctx, self.pc + 1) as u16 + self.y as u16) % 256)
-            }
-            AddrMode::Absolute => Operand::Memory(u16::from_le_bytes([
-                self.read_mem(ctx, self.pc + 1),
-                self.read_mem(ctx, self.pc + 2),
-            ])),
-            AddrMode::AbsoluteX => Operand::Memory(
-                u16::from_le_bytes([
+            AddrMode::Immediate => (Operand::Memory(self.pc + 1), false),
+            AddrMode::ZeroPage => (
+                Operand::Memory(self.read_mem(ctx, self.pc + 1) as u16),
+                false,
+            ),
+            AddrMode::ZeroPageX => (
+                Operand::Memory((self.read_mem(ctx, self.pc + 1) as u16 + self.x as u16) % 256),
+                false,
+            ),
+            AddrMode::ZeroPageY => (
+                Operand::Memory((self.read_mem(ctx, self.pc + 1) as u16 + self.y as u16) % 256),
+                false,
+            ),
+            AddrMode::Absolute => (
+                Operand::Memory(u16::from_le_bytes([
                     self.read_mem(ctx, self.pc + 1),
                     self.read_mem(ctx, self.pc + 2),
-                ]) + self.x as u16,
+                ])),
+                false,
             ),
-            AddrMode::AbsoluteY => Operand::Memory(
-                u16::from_le_bytes([
+            AddrMode::AbsoluteX => {
+                let address_arg = u16::from_le_bytes([
                     self.read_mem(ctx, self.pc + 1),
                     self.read_mem(ctx, self.pc + 2),
-                ]) + self.y as u16,
-            ),
+                ]);
+                let address = address_arg + self.x as u16;
+                let is_page_crossed = address & 0xFF00 != address_arg & 0xFF00;
+                (Operand::Memory(address), is_page_crossed)
+            }
+            AddrMode::AbsoluteY => {
+                let address_arg = u16::from_le_bytes([
+                    self.read_mem(ctx, self.pc + 1),
+                    self.read_mem(ctx, self.pc + 2),
+                ]);
+                let address = address_arg + self.y as u16;
+                let is_page_crossed = address & 0xFF00 != address_arg & 0xFF00;
+                (Operand::Memory(address), is_page_crossed)
+            }
             AddrMode::Indirect => {
                 let low_byte_pointer = u16::from_le_bytes([
                     self.read_mem(ctx, self.pc + 1),
@@ -614,215 +626,42 @@ impl CPU {
                 } else {
                     low_byte_pointer + 1
                 };
-                Operand::Memory(u16::from_le_bytes([
-                    self.read_mem(ctx, low_byte_pointer),
-                    self.read_mem(ctx, high_byte_pointer),
-                ]))
+                (
+                    Operand::Memory(u16::from_le_bytes([
+                        self.read_mem(ctx, low_byte_pointer),
+                        self.read_mem(ctx, high_byte_pointer),
+                    ])),
+                    false,
+                )
             }
             AddrMode::IndirectX => {
                 let arg = self.read_mem(ctx, self.pc + 1) as u16;
                 let x = self.x as u16;
-                Operand::Memory(
-                    (self.read_mem(ctx, (arg + x) % 256) as usize
-                        + self.read_mem(ctx, (arg + x + 1) % 256) as usize * 256)
-                        as u16,
+                (
+                    Operand::Memory(
+                        (self.read_mem(ctx, (arg + x) % 256) as usize
+                            + self.read_mem(ctx, (arg + x + 1) % 256) as usize * 256)
+                            as u16,
+                    ),
+                    false,
                 )
             }
             AddrMode::IndirectY => {
                 let arg = self.read_mem(ctx, self.pc + 1) as u16;
-                Operand::Memory(
-                    self.read_mem(ctx, arg) as u16
-                        + self.read_mem(ctx, (arg + 1) % 256) as u16 * 256
-                        + self.y as u16,
-                )
+                let address_arg = self.read_mem(ctx, arg) as u16
+                    + self.read_mem(ctx, (arg + 1) % 256) as u16 * 256;
+                let address = address_arg + self.y as u16;
+                let is_page_crossed = address & 0xFF00 != address_arg & 0xFF00;
+                (Operand::Memory(address), is_page_crossed)
             }
-            AddrMode::Relative => Operand::Offset(self.read_mem(ctx, self.pc + 1) as i8),
+            AddrMode::Relative => (
+                Operand::Offset(self.read_mem(ctx, self.pc + 1) as i8),
+                false,
+            ),
             _ => unimplemented!(
                 "Operand parser for {:?} addressing mode is not implemented",
                 addr_mode
             ),
-        }
-    }
-
-    fn update_free_cycles(&mut self, opcode: &OpCode, addr_mode: &AddrMode) {
-        self.free_cycles = match addr_mode {
-            AddrMode::Implicit => match opcode {
-                OpCode::TYA
-                | OpCode::DEY
-                | OpCode::SEI
-                | OpCode::CLI
-                | OpCode::TAY
-                | OpCode::CLV
-                | OpCode::INY
-                | OpCode::CLD
-                | OpCode::INX
-                | OpCode::SED
-                | OpCode::TXA
-                | OpCode::TAX
-                | OpCode::DEX
-                | OpCode::CLC
-                | OpCode::SEC
-                | OpCode::NOP => Some(2),
-                OpCode::PHA | OpCode::PHP => Some(3),
-                OpCode::PLA | OpCode::PLP => Some(4),
-                OpCode::RTS | OpCode::RTI => Some(6),
-                OpCode::BRK => Some(7),
-                _ => None,
-            },
-            AddrMode::Immediate => match opcode {
-                OpCode::ADC
-                | OpCode::AND
-                | OpCode::CMP
-                | OpCode::CPX
-                | OpCode::CPY
-                | OpCode::EOR
-                | OpCode::LDA
-                | OpCode::LDX
-                | OpCode::LDY
-                | OpCode::ORA
-                | OpCode::SBC => Some(2),
-                _ => None,
-            },
-            AddrMode::ZeroPage => match opcode {
-                OpCode::ADC
-                | OpCode::AND
-                | OpCode::BIT
-                | OpCode::CMP
-                | OpCode::CPX
-                | OpCode::CPY
-                | OpCode::EOR
-                | OpCode::LDA
-                | OpCode::LDX
-                | OpCode::LDY
-                | OpCode::ORA
-                | OpCode::SBC
-                | OpCode::STA
-                | OpCode::STX
-                | OpCode::STY => Some(3),
-                OpCode::ASL
-                | OpCode::DEC
-                | OpCode::INC
-                | OpCode::LSR
-                | OpCode::ROL
-                | OpCode::ROR => Some(5),
-                _ => None,
-            },
-            AddrMode::ZeroPageX => match opcode {
-                OpCode::ADC
-                | OpCode::AND
-                | OpCode::CMP
-                | OpCode::EOR
-                | OpCode::LDA
-                | OpCode::LDY
-                | OpCode::ORA
-                | OpCode::SBC
-                | OpCode::STA
-                | OpCode::STY => Some(4),
-                OpCode::ASL
-                | OpCode::DEC
-                | OpCode::INC
-                | OpCode::LSR
-                | OpCode::ROL
-                | OpCode::ROR => Some(6),
-                _ => None,
-            },
-            AddrMode::ZeroPageY => match opcode {
-                OpCode::LDX | OpCode::STX => Some(4),
-                _ => None,
-            },
-            AddrMode::Absolute => match opcode {
-                OpCode::ADC
-                | OpCode::AND
-                | OpCode::BIT
-                | OpCode::CMP
-                | OpCode::CPX
-                | OpCode::CPY
-                | OpCode::EOR
-                | OpCode::LDA
-                | OpCode::LDX
-                | OpCode::LDY
-                | OpCode::ORA
-                | OpCode::SBC
-                | OpCode::STA
-                | OpCode::STX
-                | OpCode::STY => Some(4),
-                OpCode::ASL
-                | OpCode::DEC
-                | OpCode::INC
-                | OpCode::LSR
-                | OpCode::ROL
-                | OpCode::ROR
-                | OpCode::JSR => Some(6),
-                OpCode::JMP => Some(3),
-                _ => None,
-            },
-            AddrMode::AbsoluteX => match opcode {
-                OpCode::ADC
-                | OpCode::AND
-                | OpCode::CMP
-                | OpCode::EOR
-                | OpCode::LDA
-                | OpCode::LDY
-                | OpCode::ORA
-                | OpCode::SBC => Some(4), // TODO: Have to be 4+
-                OpCode::STA => Some(5),
-                OpCode::ASL
-                | OpCode::DEC
-                | OpCode::INC
-                | OpCode::LSR
-                | OpCode::ROL
-                | OpCode::ROR => Some(7),
-                _ => None,
-            },
-            AddrMode::AbsoluteY => match opcode {
-                OpCode::ADC
-                | OpCode::AND
-                | OpCode::CMP
-                | OpCode::EOR
-                | OpCode::LDA
-                | OpCode::LDX
-                | OpCode::ORA
-                | OpCode::SBC => Some(4), // TODO: Have to be 4+
-                OpCode::STA => Some(5),
-                _ => None,
-            },
-            AddrMode::Relative => match opcode {
-                OpCode::BCC
-                | OpCode::BCS
-                | OpCode::BEQ
-                | OpCode::BMI
-                | OpCode::BNE
-                | OpCode::BPL
-                | OpCode::BVC
-                | OpCode::BVS => Some(2), // TODO: Have to be +1 if branch succeeds +2 if to a new page
-                _ => None,
-            },
-            AddrMode::Indirect => match opcode {
-                OpCode::JMP => Some(5),
-                _ => None,
-            },
-            AddrMode::IndirectX => match opcode {
-                OpCode::ADC
-                | OpCode::AND
-                | OpCode::CMP
-                | OpCode::EOR
-                | OpCode::LDA
-                | OpCode::ORA
-                | OpCode::SBC
-                | OpCode::STA => Some(6),
-                _ => None,
-            },
-            AddrMode::IndirectY => match opcode {
-                OpCode::ADC
-                | OpCode::AND
-                | OpCode::CMP
-                | OpCode::EOR
-                | OpCode::LDA
-                | OpCode::ORA
-                | OpCode::SBC => Some(5), // TODO: Have to be 5+
-                OpCode::STA => Some(6),
-                _ => None,
-            },
         }
     }
 
@@ -858,7 +697,7 @@ impl CPU {
         }
     }
 
-    pub fn do_interrupt(&mut self, ctx: &mut CPUContext) {
+    pub fn do_interrupt(&mut self, ctx: &mut CPUContext) -> Option<u8> {
         let [ret_lsb, ret_msb] = (self.pc + 2).to_le_bytes();
         self.stack_push(ctx, ret_msb);
         self.stack_push(ctx, ret_lsb);
@@ -867,14 +706,16 @@ impl CPU {
 
         self.set_interrupt_disable_flag();
 
-        self.pc = u16::from_le_bytes([self.read_mem(ctx, 0xFFFE), self.read_mem(ctx, 0xFFFF)])
+        self.pc = u16::from_le_bytes([self.read_mem(ctx, 0xFFFE), self.read_mem(ctx, 0xFFFF)]);
+
+        Some(7)
     }
 
-    fn do_ora(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_ora(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "ORA";
 
-        let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+        let (value, is_page_crossed) = {
+            let (operand, is_page_crossed) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -887,7 +728,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => self.read_mem(ctx, address),
+                ) => (self.read_mem(ctx, address), is_page_crossed),
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -907,13 +748,30 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        let page_cross_penalty = match is_page_crossed {
+            true => 1,
+            false => 0,
+        };
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteX | AddrMode::AbsoluteY => Some(4 + page_cross_penalty),
+            AddrMode::IndirectX => Some(6),
+            AddrMode::IndirectY => Some(5 + page_cross_penalty),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_and(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_and(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "AND";
 
-        let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+        let (value, is_page_crossed) = {
+            let (operand, is_page_crossed) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -926,7 +784,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => self.read_mem(ctx, address),
+                ) => (self.read_mem(ctx, address), is_page_crossed),
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -946,13 +804,30 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        let page_cross_penalty = match is_page_crossed {
+            true => 1,
+            false => 0,
+        };
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteX | AddrMode::AbsoluteY => Some(4 + page_cross_penalty),
+            AddrMode::IndirectX => Some(6),
+            AddrMode::IndirectY => Some(5 + page_cross_penalty),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_eor(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_eor(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "EOR";
 
-        let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+        let (value, is_page_crossed) = {
+            let (operand, is_page_crossed) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -965,7 +840,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => self.read_mem(ctx, address),
+                ) => (self.read_mem(ctx, address), is_page_crossed),
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -985,13 +860,30 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        let page_cross_penalty = match is_page_crossed {
+            true => 1,
+            false => 0,
+        };
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteX | AddrMode::AbsoluteY => Some(4 + page_cross_penalty),
+            AddrMode::IndirectX => Some(6),
+            AddrMode::IndirectY => Some(5 + page_cross_penalty),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_adc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_adc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "ADC";
 
-        let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+        let (value, is_page_crossed) = {
+            let (operand, is_page_crossed) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -1004,7 +896,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => self.read_mem(ctx, address),
+                ) => (self.read_mem(ctx, address), is_page_crossed),
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -1049,13 +941,30 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        let page_cross_penalty = match is_page_crossed {
+            true => 1,
+            false => 0,
+        };
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteX | AddrMode::AbsoluteY => Some(4 + page_cross_penalty),
+            AddrMode::IndirectX => Some(6),
+            AddrMode::IndirectY => Some(5 + page_cross_penalty),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_sta(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_sta(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "STA";
 
         let address = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -1082,13 +991,24 @@ impl CPU {
         trace_register!(opcode_name, self.a);
 
         self.write_mem(ctx, address, self.a);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteX | AddrMode::AbsoluteY => Some(5),
+            AddrMode::IndirectX | AddrMode::IndirectY => Some(6),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_lda(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_lda(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "LDA";
 
-        let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+        let (value, is_page_crossed) = {
+            let (operand, is_page_crossed) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -1101,7 +1021,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => self.read_mem(ctx, address),
+                ) => (self.read_mem(ctx, address), is_page_crossed),
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -1121,13 +1041,30 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        let page_cross_penalty = match is_page_crossed {
+            true => 1,
+            false => 0,
+        };
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteX | AddrMode::AbsoluteY => Some(4 + page_cross_penalty),
+            AddrMode::IndirectX => Some(6),
+            AddrMode::IndirectY => Some(5 + page_cross_penalty),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_cmp(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_cmp(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "CMP";
 
-        let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+        let (value, is_page_crossed) = {
+            let (operand, is_page_crossed) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -1140,7 +1077,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => self.read_mem(ctx, address),
+                ) => (self.read_mem(ctx, address), is_page_crossed),
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -1174,13 +1111,30 @@ impl CPU {
         }
 
         trace_flags!(opcode_name, self.p);
+
+        let page_cross_penalty = match is_page_crossed {
+            true => 1,
+            false => 0,
+        };
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteX | AddrMode::AbsoluteY => Some(4 + page_cross_penalty),
+            AddrMode::IndirectX => Some(6),
+            AddrMode::IndirectY => Some(5 + page_cross_penalty),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_sbc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_sbc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "SBC";
 
-        let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+        let (value, is_page_crossed) = {
+            let (operand, is_page_crossed) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -1193,7 +1147,7 @@ impl CPU {
                     | AddrMode::IndirectX
                     | AddrMode::IndirectY,
                     &Operand::Memory(address),
-                ) => self.read_mem(ctx, address),
+                ) => (self.read_mem(ctx, address), is_page_crossed),
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -1239,9 +1193,26 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        let page_cross_penalty = match is_page_crossed {
+            true => 1,
+            false => 0,
+        };
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteX | AddrMode::AbsoluteY => Some(4 + page_cross_penalty),
+            AddrMode::IndirectX => Some(6),
+            AddrMode::IndirectY => Some(5 + page_cross_penalty),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_php(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_php(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "PHP";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1252,7 +1223,7 @@ impl CPU {
             self.stack_push(ctx, self.p | 0b00110000);
 
             trace_register!(opcode_name, self.s);
-            return;
+            return Some(3);
         };
 
         unimplemented!(
@@ -1262,11 +1233,11 @@ impl CPU {
         )
     }
 
-    fn do_bpl(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_bpl(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "BPL";
 
         let offset = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
@@ -1284,15 +1255,23 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        let mut page_cross_penalty = 0;
         self.pc += 2;
+        let old_pc = self.pc;
         if !self.get_negative_flag() {
+            page_cross_penalty += 1;
             self.pc = (self.pc as i32 + offset as i32) as u16;
+            if self.pc & 0xFF00 != old_pc & 0xFF00 {
+                page_cross_penalty += 1;
+            }
         }
 
         trace_register!(opcode_name, self.pc);
+
+        Some(2 + page_cross_penalty)
     }
 
-    fn do_clc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_clc(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "CLC";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1302,7 +1281,7 @@ impl CPU {
             self.clear_carry_flag();
 
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -1312,10 +1291,10 @@ impl CPU {
         )
     }
 
-    fn do_jsr(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_jsr(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "JSR";
         let target = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Absolute, &Operand::Memory(address)) => address,
@@ -1340,12 +1319,14 @@ impl CPU {
 
         trace_register!(opcode_name, self.pc);
         trace_register!(opcode_name, self.s);
+
+        Some(6)
     }
 
-    fn do_bit(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_bit(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "BIT";
         let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::ZeroPage | AddrMode::Absolute, &Operand::Memory(address)) => {
@@ -1384,9 +1365,18 @@ impl CPU {
         }
 
         trace_flags!(opcode_name, self.p);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::Absolute => Some(4),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_plp(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_plp(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "PLP";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1399,7 +1389,7 @@ impl CPU {
             trace_register!(opcode_name, self.s);
             trace_flags!(opcode_name, self.p);
 
-            return;
+            return Some(4);
         };
 
         unimplemented!(
@@ -1409,11 +1399,11 @@ impl CPU {
         )
     }
 
-    fn do_bmi(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_bmi(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "BMI";
 
         let offset = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
@@ -1431,15 +1421,23 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        let mut page_cross_penalty = 0;
         self.pc += 2;
+        let old_pc = self.pc;
         if self.get_negative_flag() {
+            page_cross_penalty += 1;
             self.pc = (self.pc as i32 + offset as i32) as u16;
+            if self.pc & 0xFF00 != old_pc & 0xFF00 {
+                page_cross_penalty += 1;
+            }
         }
 
         trace_register!(opcode_name, self.pc);
+
+        Some(2 + page_cross_penalty)
     }
 
-    fn do_sec(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_sec(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "SEC";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1449,7 +1447,7 @@ impl CPU {
             self.set_carry_flag();
 
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -1459,7 +1457,7 @@ impl CPU {
         )
     }
 
-    fn do_rti(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_rti(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "RTI";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1474,7 +1472,7 @@ impl CPU {
             trace_register!(opcode_name, self.s);
             trace_register!(opcode_name, self.pc);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(6);
         };
 
         unimplemented!(
@@ -1484,7 +1482,7 @@ impl CPU {
         )
     }
 
-    fn do_pha(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_pha(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "PHA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1496,7 +1494,7 @@ impl CPU {
 
             trace_register!(opcode_name, self.a);
             trace_register!(opcode_name, self.s);
-            return;
+            return Some(3);
         };
 
         unimplemented!(
@@ -1506,14 +1504,14 @@ impl CPU {
         )
     }
 
-    fn do_jmp(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_jmp(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         // An original 6502 has does not correctly fetch the target address
         // if the indirect vector falls on a page boundary (e.g. $xxFF where
         // xx is any value from $00 to $FF). In this case fetches the LSB
         // from $xxFF as expected but takes the MSB from $xx00.
         let opcode_name = "JMP";
         let address = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Absolute | AddrMode::Indirect, &Operand::Memory(address)) => address,
@@ -1533,13 +1531,22 @@ impl CPU {
         self.pc = address;
 
         trace_register!(opcode_name, self.pc);
+
+        match addr_mode {
+            AddrMode::Absolute => Some(3),
+            AddrMode::Indirect => Some(5),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_bvc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_bvc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "BVC";
 
         let offset = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
@@ -1557,15 +1564,23 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        let mut page_cross_penalty = 0;
         self.pc += 2;
+        let old_pc = self.pc;
         if !self.get_overflow_flag() {
+            page_cross_penalty += 1;
             self.pc = (self.pc as i32 + offset as i32) as u16;
+            if self.pc & 0xFF00 != old_pc & 0xFF00 {
+                page_cross_penalty += 1;
+            }
         }
 
         trace_register!(opcode_name, self.pc);
+
+        Some(2 + page_cross_penalty)
     }
 
-    fn do_cli(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_cli(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "CLI";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1575,7 +1590,7 @@ impl CPU {
             self.clear_interrupt_disable_flag();
 
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -1585,7 +1600,7 @@ impl CPU {
         )
     }
 
-    fn do_rts(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_rts(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "RTS";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1598,7 +1613,7 @@ impl CPU {
 
             trace_register!(opcode_name, self.s);
             trace_register!(opcode_name, self.pc);
-            return;
+            return Some(6);
         };
 
         unimplemented!(
@@ -1608,7 +1623,7 @@ impl CPU {
         )
     }
 
-    fn do_pla(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_pla(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "PLA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1623,7 +1638,7 @@ impl CPU {
             trace_register!(opcode_name, self.a);
             trace_register!(opcode_name, self.s);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(4);
         };
 
         unimplemented!(
@@ -1633,11 +1648,11 @@ impl CPU {
         )
     }
 
-    fn do_bvs(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_bvs(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "BVS";
 
         let offset = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
@@ -1655,16 +1670,24 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        let mut page_cross_penalty = 0;
         self.pc += 2;
+        let old_pc = self.pc;
         if self.get_overflow_flag() {
+            page_cross_penalty += 1;
             self.pc = (self.pc as i32 + offset as i32) as u16;
+            if self.pc & 0xFF00 != old_pc & 0xFF00 {
+                page_cross_penalty += 1;
+            }
         }
 
         trace_register!(opcode_name, self.pc);
         trace_flags!(opcode_name, self.p);
+
+        Some(2 + page_cross_penalty)
     }
 
-    fn do_sei(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_sei(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "SEI";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1674,7 +1697,7 @@ impl CPU {
             self.set_interrupt_disable_flag();
 
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -1684,10 +1707,10 @@ impl CPU {
         )
     }
 
-    fn do_sty(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_sty(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "STY";
         let address = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -1711,9 +1734,18 @@ impl CPU {
         trace_execute!(opcode_name);
 
         self.write_mem(ctx, address, self.y);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_dey(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_dey(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "DEY";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1726,7 +1758,7 @@ impl CPU {
 
             trace_register!(opcode_name, self.y);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -1736,11 +1768,11 @@ impl CPU {
         )
     }
 
-    fn do_bcc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_bcc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "BCC";
 
         let offset = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
@@ -1758,15 +1790,23 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        let mut page_cross_penalty = 0;
         self.pc += 2;
+        let old_pc = self.pc;
         if !self.get_carry_flag() {
+            page_cross_penalty += 1;
             self.pc = (self.pc as i32 + offset as i32) as u16;
+            if self.pc & 0xFF00 != old_pc & 0xFF00 {
+                page_cross_penalty += 1;
+            }
         }
 
         trace_register!(opcode_name, self.pc);
+
+        Some(2 + page_cross_penalty)
     }
 
-    fn do_tya(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_tya(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "TYA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1780,7 +1820,7 @@ impl CPU {
 
             trace_register!(opcode_name, self.a);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -1790,11 +1830,11 @@ impl CPU {
         )
     }
 
-    fn do_ldy(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_ldy(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "LDY";
 
-        let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+        let (value, is_page_crossed) = {
+            let (operand, is_page_crossed) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -1804,7 +1844,7 @@ impl CPU {
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteX,
                     &Operand::Memory(address),
-                ) => self.read_mem(ctx, address),
+                ) => (self.read_mem(ctx, address), is_page_crossed),
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -1824,9 +1864,24 @@ impl CPU {
 
         trace_register!(opcode_name, self.y);
         trace_flags!(opcode_name, self.p);
+
+        let page_cross_penalty = match is_page_crossed {
+            true => 1,
+            false => 0,
+        };
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteX => Some(4 + page_cross_penalty),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_tay(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_tay(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "TAY";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1840,7 +1895,7 @@ impl CPU {
 
             trace_register!(opcode_name, self.y);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -1850,11 +1905,11 @@ impl CPU {
         )
     }
 
-    fn do_bcs(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_bcs(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "BCS";
 
         let offset = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
@@ -1872,15 +1927,23 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        let mut page_cross_penalty = 0;
         self.pc += 2;
+        let old_pc = self.pc;
         if self.get_carry_flag() {
+            page_cross_penalty += 1;
             self.pc = (self.pc as i32 + offset as i32) as u16;
+            if self.pc & 0xFF00 != old_pc & 0xFF00 {
+                page_cross_penalty += 1;
+            }
         }
 
         trace_register!(opcode_name, self.pc);
+
+        Some(2 + page_cross_penalty)
     }
 
-    fn do_clv(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_clv(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "CLV";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1890,7 +1953,7 @@ impl CPU {
             self.clear_overflow_flag();
 
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -1900,11 +1963,11 @@ impl CPU {
         )
     }
 
-    fn do_cpy(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_cpy(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "CPY";
 
         let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -1944,9 +2007,19 @@ impl CPU {
         }
 
         trace_flags!(opcode_name, self.p);
+
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::Absolute => Some(4),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_iny(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_iny(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "INY";
 
         if let AddrMode::Implicit = addr_mode {
@@ -1959,7 +2032,7 @@ impl CPU {
 
             trace_register!(opcode_name, self.y);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -1969,11 +2042,11 @@ impl CPU {
         )
     }
 
-    fn do_bne(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_bne(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "BNE";
 
         let offset = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
@@ -1991,16 +2064,24 @@ impl CPU {
         trace_register!(opcode_name, self.pc);
         trace_execute!(opcode_name);
 
+        let mut page_cross_penalty = 0;
         self.pc += 2;
+        let old_pc = self.pc;
         if !self.get_zero_flag() {
+            page_cross_penalty += 1;
             self.pc = (self.pc as i32 + offset as i32) as u16;
+            if self.pc & 0xFF00 != old_pc & 0xFF00 {
+                page_cross_penalty += 1;
+            }
         }
 
         trace_flags!(opcode_name, self.p);
         trace_register!(opcode_name, self.pc);
+
+        Some(2 + page_cross_penalty)
     }
 
-    fn do_cld(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_cld(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "CLD";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2010,7 +2091,7 @@ impl CPU {
             self.clear_decimal_flag();
 
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -2020,11 +2101,11 @@ impl CPU {
         )
     }
 
-    fn do_cpx(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_cpx(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "CPX";
 
         let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -2065,9 +2146,19 @@ impl CPU {
 
         trace_register!(opcode_name, self.x);
         trace_flags!(opcode_name, self.p);
+
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::Absolute => Some(4),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_inx(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_inx(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "INX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2080,7 +2171,7 @@ impl CPU {
 
             trace_register!(opcode_name, self.x);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -2090,11 +2181,11 @@ impl CPU {
         )
     }
 
-    fn do_beq(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_beq(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "BEQ";
 
         let offset = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (AddrMode::Relative, &Operand::Offset(offset)) => offset,
@@ -2112,15 +2203,23 @@ impl CPU {
         trace_flags!(opcode_name, self.p);
         trace_execute!(opcode_name);
 
+        let mut page_cross_penalty = 0;
         self.pc += 2;
+        let old_pc = self.pc;
         if self.get_zero_flag() {
+            page_cross_penalty += 1;
             self.pc = (self.pc as i32 + offset as i32) as u16;
+            if self.pc & 0xFF00 != old_pc & 0xFF00 {
+                page_cross_penalty += 1;
+            }
         }
 
         trace_register!(opcode_name, self.pc);
+
+        Some(2 + page_cross_penalty)
     }
 
-    fn do_sed(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_sed(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "SED";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2130,7 +2229,7 @@ impl CPU {
             self.set_decimal_flag();
 
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -2140,7 +2239,7 @@ impl CPU {
         )
     }
 
-    fn do_asl(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_asl(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "ASL";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2160,16 +2259,15 @@ impl CPU {
 
             trace_register!(opcode_name, self.a);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         let address = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
-                    AddrMode::Immediate
-                    | AddrMode::ZeroPage
+                    AddrMode::ZeroPage
                     | AddrMode::ZeroPageX
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteX,
@@ -2204,9 +2302,19 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(5),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(6),
+            AddrMode::AbsoluteX => Some(7),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_rol(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_rol(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "ROL";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2228,16 +2336,15 @@ impl CPU {
 
             trace_register!(opcode_name, self.a);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         let address = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
-                    AddrMode::Immediate
-                    | AddrMode::ZeroPage
+                    AddrMode::ZeroPage
                     | AddrMode::ZeroPageX
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteX,
@@ -2278,9 +2385,19 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(5),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(6),
+            AddrMode::AbsoluteX => Some(7),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_lsr(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_lsr(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "LSR";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2298,11 +2415,11 @@ impl CPU {
 
             trace_register!(opcode_name, self.a);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         let address = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -2345,9 +2462,19 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(5),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(6),
+            AddrMode::AbsoluteX => Some(7),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_ror(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_ror(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "ROR";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2369,16 +2496,15 @@ impl CPU {
 
             trace_register!(opcode_name, self.a);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         let address = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
-                    AddrMode::Immediate
-                    | AddrMode::ZeroPage
+                    AddrMode::ZeroPage
                     | AddrMode::ZeroPageX
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteX,
@@ -2419,13 +2545,23 @@ impl CPU {
 
         trace_register!(opcode_name, self.a);
         trace_flags!(opcode_name, self.p);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(5),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(6),
+            AddrMode::AbsoluteX => Some(7),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_stx(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_stx(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "STX";
 
         let address = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -2446,9 +2582,18 @@ impl CPU {
         trace_execute!(opcode_name);
 
         self.write_mem(ctx, address, self.x);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageY | AddrMode::Absolute => Some(4),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_txa(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_txa(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "TXA";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2460,7 +2605,7 @@ impl CPU {
             self.update_flags(self.a);
 
             trace_register!(opcode_name, self.a);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -2470,7 +2615,7 @@ impl CPU {
         )
     }
 
-    fn do_txs(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_txs(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "TXS";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2481,7 +2626,7 @@ impl CPU {
             self.s = self.x;
 
             trace_register!(opcode_name, self.s);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -2491,11 +2636,11 @@ impl CPU {
         )
     }
 
-    fn do_ldx(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_ldx(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "LDX";
 
-        let value = {
-            let operand = self.parse_operand(ctx, addr_mode);
+        let (value, is_page_crossed) = {
+            let (operand, is_page_crossed) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -2505,7 +2650,7 @@ impl CPU {
                     | AddrMode::Absolute
                     | AddrMode::AbsoluteY,
                     &Operand::Memory(address),
-                ) => self.read_mem(ctx, address),
+                ) => (self.read_mem(ctx, address), is_page_crossed),
                 _ => unimplemented!(
                     "Addressing mode {:?} (operand {:?}) is not implemented for {:?} opcode",
                     addr_mode,
@@ -2525,9 +2670,24 @@ impl CPU {
 
         trace_register!(opcode_name, self.x);
         trace_flags!(opcode_name, self.p);
+
+        let page_cross_penalty = match is_page_crossed {
+            true => 1,
+            false => 0,
+        };
+        match addr_mode {
+            AddrMode::Immediate => Some(2),
+            AddrMode::ZeroPage => Some(3),
+            AddrMode::ZeroPageY | AddrMode::Absolute => Some(4),
+            AddrMode::AbsoluteY => Some(4 + page_cross_penalty),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_tax(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_tax(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "TAX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2539,7 +2699,7 @@ impl CPU {
             self.update_flags(self.x);
 
             trace_register!(opcode_name, self.x);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -2549,7 +2709,7 @@ impl CPU {
         )
     }
 
-    fn do_tsx(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_tsx(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "TSX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2561,7 +2721,7 @@ impl CPU {
             self.update_flags(self.x);
 
             trace_register!(opcode_name, self.x);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -2571,11 +2731,11 @@ impl CPU {
         )
     }
 
-    fn do_dec(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_dec(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "DEC";
 
         let address = {
-            let operand = self.parse_operand(ctx, addr_mode);
+            let (operand, _) = self.parse_operand(ctx, addr_mode);
             trace_operand!(opcode_name, operand);
             match (addr_mode, &operand) {
                 (
@@ -2604,9 +2764,19 @@ impl CPU {
         self.update_flags(new_value);
 
         trace_flags!(opcode_name, self.p);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(5),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(6),
+            AddrMode::AbsoluteX => Some(7),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_dex(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_dex(&mut self, _ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "DEX";
 
         if let AddrMode::Implicit = addr_mode {
@@ -2619,7 +2789,7 @@ impl CPU {
 
             trace_register!(opcode_name, self.x);
             trace_flags!(opcode_name, self.p);
-            return;
+            return Some(2);
         };
 
         unimplemented!(
@@ -2629,11 +2799,11 @@ impl CPU {
         )
     }
 
-    fn do_inc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) {
+    fn do_inc(&mut self, ctx: &mut CPUContext, addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "INC";
         let address = match addr_mode {
             AddrMode::Absolute | AddrMode::AbsoluteX | AddrMode::ZeroPage | AddrMode::ZeroPageX => {
-                let operand = self.parse_operand(ctx, addr_mode);
+                let (operand, _) = self.parse_operand(ctx, addr_mode);
                 trace_operand!(opcode_name, operand);
                 match operand {
                     Operand::Memory(address) => address,
@@ -2643,17 +2813,6 @@ impl CPU {
                     ),
                 }
             }
-            AddrMode::Implicit
-            | AddrMode::Immediate
-            | AddrMode::Relative
-            | AddrMode::AbsoluteY
-            | AddrMode::Indirect
-            | AddrMode::IndirectX
-            | AddrMode::IndirectY
-            | AddrMode::ZeroPageY => unreachable!(
-                "Addressing mode {:?} is not defined for {:?} opcode",
-                addr_mode, opcode_name
-            ),
             _ => unimplemented!(
                 "Addressing mode {:?} is not implemented for {:?} opcode",
                 addr_mode,
@@ -2671,11 +2830,22 @@ impl CPU {
         self.update_flags(new_value);
 
         trace_flags!(opcode_name, self.p);
+
+        match addr_mode {
+            AddrMode::ZeroPage => Some(5),
+            AddrMode::ZeroPageX | AddrMode::Absolute => Some(6),
+            AddrMode::AbsoluteX => Some(7),
+            _ => unreachable!(
+                "Cycle times is not implemented for opcode {} with addressing mode {:#?}",
+                opcode_name, addr_mode
+            ),
+        }
     }
 
-    fn do_nop(&mut self, addr_mode: &AddrMode) {
+    fn do_nop(&mut self, _addr_mode: &AddrMode) -> Option<u8> {
         let opcode_name = "NOP";
         trace_execute!(opcode_name);
         // Literally do nothing
+        Some(2)
     }
 }
