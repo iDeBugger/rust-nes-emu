@@ -397,6 +397,26 @@ mod test {
     }
 
     #[test]
+    fn test_rom_timings_2() {
+        init();
+
+        let mut platform = Platform::new();
+        platform.load_rom_and_run(
+            "./tests/roms/instructions_timings/2-branch_timing.nes",
+            true,
+        );
+
+        let cartridge = match &mut platform.cartridge {
+            Some(cartridge) => cartridge,
+            None => panic!("Can't run the platform without a cartridge inserted"),
+        };
+        let mut ctx = Platform::build_cpu_context(&mut platform.ppu, &mut platform.apu, cartridge);
+        print_rom_result!(platform, ctx);
+
+        assert_eq!(platform.cpu.read_mem(&mut ctx, 0x6000), 0x0);
+    }
+
+    #[test]
     fn test_apu_1() {
         init();
 
